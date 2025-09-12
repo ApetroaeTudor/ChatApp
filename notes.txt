@@ -1,0 +1,46 @@
+chat app
+-> clients + servers
+
+- server has a max nr of clients available
+- server runs in a loop and checks for clients
+
+
+- CLIENT:
+-> client takes in a parameter that says the server port
+-> client links the ctrl c signal for exiting
+-> client runs a send_thread and a receive_thread
+
+SEND_THREAD: loops, gets input from stdin.
+             if input is a certain string, then set a variable
+             sends message to server
+
+RECEIVE_THREAD: loops, checks the variable, if its set, then exit
+                receives the formatted message from the server. 
+                HELPER FUNCTION: messages are formatted like "STAGE.xx.xx.xx". the helper function returns a std::vector of 3 containing these elements
+                STAGE can be either "INIT" in order to get setup info from sv, or "REGULAR" for regular msg transmission
+
+                "INIT   .ID.COLOR.xx      .xx"
+                "REGULAR.ID.COLOR.USERNAME.MESSAGE"
+
+                the server generates a color code on getting a new connection
+
+                the receiver prints the message and then displays a "You" message
+
+
+SERVER: clients vector. each client has: ID, NAME, COLOR
+    0 threads-> new client. SPAWN THREAD. Thread runs the client on coroutines.
+
+    the server runs on system threads-2 
+    Listener threads, accept connections and send the relevant data to worker threads.
+    Worker threads: coroutine based, non blocking.
+
+    each worker thread:
+    CoroutineRead Vector, CoroutineWrite Vector
+    -> each new client adds a new element in both vectors.
+    
+    -> in the worker thread loop the coroutine functions are called
+    -> the ReadCoroutine suspends everytime, wakes on reading available from socket, reads from the socket
+    -> the thread has an event checking loop
+    -> if the event is ok for the coroutine, the coroutine handle is resumed 
+
+    main thread loop: when server main thread detects a connection
