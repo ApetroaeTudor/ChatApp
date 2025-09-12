@@ -5,6 +5,7 @@ namespace constants
     constexpr int MAX_LEN         = 200;
     constexpr int PORT            = 8080;
     constexpr auto SV_ADDR        = "127.0.0.1";
+    constexpr int MAX_EVENTS      = 10;
 }
 
 namespace colors

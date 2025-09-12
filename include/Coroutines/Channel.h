@@ -11,52 +11,12 @@ struct Channel
     std::queue<T> inner_queue;
     size_t max_nr_of_elements;
     std::vector<std::coroutine_handle<>> suspended_writers;
-    std::vector<std::coroutine_handle<>> suspended_readers; 
-
-
+    std::vector<std::coroutine_handle<>> suspended_readers;
 
     Channel(const Channel &ch) = delete;
     Channel &operator=(const Channel &ch) = delete;
     Channel() : max_nr_of_elements(0) {}
     Channel(const size_t &max_nr_elems) : max_nr_elems(max_nr_elems) {}
-
-    void add_suspended_writer(std::coroutine_handle<> h)
-    {
-        this->suspended_writers.push_back(h);
-    }
-    void add_suspended_reader(std::coroutine_handle<> h)
-    {
-        this->suspended_readers.push_back(h);
-    }
-
-    bool resume_writer()
-    {
-        if(!this->suspended_writers.empty() && !this->is_full())
-        {
-            auto h = this->suspended_writers.back();
-            this->suspended_writers.pop_back();
-            h.resume();
-            return true;
-        }
-        return false;
-    }
-    bool resume_reader()
-    {
-        if(!this->suspended_readers.empty() && !this->is_full())
-        {
-            auto h = this->suspended_readers.back();
-            this->suspended_readers.pop_back();
-            h.resume();
-            return true;
-        }
-        return false;
-    }
-
-
-    bool is_full() const
-    {
-        return inner_queue.size() == max_nr_of_elements;
-    }
 
     Channel(Channel &&ch) noexcept : inner_queue(std::move(ch.inner_queue))
     {
@@ -66,7 +26,7 @@ struct Channel
             ch->max_nr_of_elements = 0;
         }
     }
-    Channel &operator=(Channel &&ch) noexcept
+    Channel& &operator=(Channel &&ch) noexcept
     {
         if (this != &ch)
         {
@@ -83,7 +43,40 @@ struct Channel
         this->max_nr_of_elements = 0;
     }
 
+    void add_suspended_writer(std::coroutine_handle<> h)
+    {
+        this->suspended_writers.push_back(h);
+    }
+    void add_suspended_reader(std::coroutine_handle<> h)
+    {
+        this->suspended_readers.push_back(h);
+    }
 
+    bool resume_writer()
+    {
+        if (!this->suspended_writers.empty() && !this->is_full())
+        {
+            auto h = this->suspended_writers.back();
+            this->suspended_writers.pop_back();
+            h.resume();
+            return true;
+        }
+        return false;
+    }
+    bool resume_reader()
+    {
+        if (!this->suspended_readers.empty() && !this->is_full())
+        {
+            auto h = this->suspended_readers.back();
+            this->suspended_readers.pop_back();
+            h.resume();
+            return true;
+        }
+        return false;
+    }
+
+    bool is_full() const
+    {
+        return inner_queue.size() == max_nr_of_elements;
+    }
 };
-
-
