@@ -1,6 +1,7 @@
 #include "Client.h"
 
-Client::Client(Client &&other) noexcept
+
+Client &Client::operator=(Client &&other)noexcept
 {
     if (this != &other)
     {
@@ -8,22 +9,17 @@ Client::Client(Client &&other) noexcept
         memset(&other.s_addr, 0, sizeof(other.s_addr));
 
         this->cl_socket = other.cl_socket;
-        other.cl_socket = 0;
-    }
-}
-
-Client &Client::operator=(Client &&other)
-{
-    if (this != &other)
-    {
-        this->s_addr = other.s_addr;
-        memset(&other.s_addr, 0, sizeof(other.s_addr));
-
-        this->cl_socket = other.cl_socket;
-        other.cl_socket = 0;
+        other.cl_socket = -1;
     }
     return *this;
 }
+
+Client::Client(Client &&other) noexcept
+{
+    *this = std::move(other);
+}
+
+
 
 Client::Client(int domain, int type, int protocol, std::string sv_addr, int port)
 {
@@ -78,6 +74,19 @@ void Client::receive_msg(struct MessageFrame &message_frame) const
         }
     }
     throw std::runtime_error("The socked is initialized\n");
+}
+
+void Client::make_cl_socket_nonblocking()
+{
+    if(cl_socket>=0)
+    {
+        int flags = fcntl(this->cl_socket,F_GETFL,0);
+        if( (flags & O_NONBLOCK) !=O_NONBLOCK)
+        {
+            fcntl(this->cl_socket,F_SETFL,flags|O_NONBLOCK);
+
+        }
+    }
 }
 
 int Client::get_cl_socket() const

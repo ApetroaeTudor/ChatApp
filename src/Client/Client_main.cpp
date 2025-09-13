@@ -1,10 +1,6 @@
 #include "resources.h"
 #include <thread>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
 #include <iostream>
-#include <string>
 #include <chrono>
 #include <sys/epoll.h>
 

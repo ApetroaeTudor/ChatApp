@@ -1,5 +1,5 @@
 chat app
--> clients + servers
+-> clients + server
 
 - server has a max nr of clients available
 - server runs in a loop and checks for clients
@@ -30,17 +30,36 @@ RECEIVE_THREAD: loops, checks the variable, if its set, then exit
 SERVER: clients vector. each client has: ID, NAME, COLOR
     0 threads-> new client. SPAWN THREAD. Thread runs the client on coroutines.
 
-    the server runs on system threads-2 
-    Listener threads, accept connections and send the relevant data to worker threads.
-    Worker threads: coroutine based, non blocking.
+          -> Th0 : main function + loop
+          -> Th1 : runs a loop, polls; if can accept, add client to vector, update nr_of_clients(atomic), update max_clients/thread(atomic on t0)
+                -> runs the poll with EPOLLIN | EPOLLRDHUP, if this event happens that means the client is diconnected
+                -> client disconnect, update nr_of_clients, max_clients/thread
+          -> Th2-4: run loop, beginning of loop: check nr of clients, if different from last_nr of clients(last iter)
+                -> check nr_of_clients(atomic t0)
+                -> see the difference between last_iter and now
+                -> split the difference (difference/nr_of_threads): iterate through the clients, if one unowned found: mark it(atomic flag in server struct, owned by t0), owned(local to thread)++; if owned==max_clients/thread: break, also break if iterating done
 
-    each worker thread:
-    CoroutineRead Vector, CoroutineWrite Vector
-    -> each new client adds a new element in both vectors.
-    
-    -> in the worker thread loop the coroutine functions are called
-    -> the ReadCoroutine suspends everytime, wakes on reading available from socket, reads from the socket
-    -> the thread has an event checking loop
-    -> if the event is ok for the coroutine, the coroutine handle is resumed 
+                -> update owned_clients when iterating. An update means adding it to the poll and to the thread local monitoring structure, and launching a suspending read_coroutine and a suspending write_coroutine
+                -> if read_ready, resume coroutine, read message, and send it to a thread safe queue, owned by Th0
+                -> Th0 reads the queue, consumes the msg, sets(with mutex) a "message_to_broadcast" shared variable, and updates each thread's "has to broadcast" atomic flag variable (in the custom thread struct)
+                -> if write_ready, check the "broadcast" variable, if not set, then set it, and send the broadcast msg to all owned client fds.
+                
 
-    main thread loop: when server main thread detects a connection
+each client has: ID, FD, NAME, COLOR, needs_broadcast(atomic flag), setup_step(atomic int), setup_done(atomic flag)
+setup process: 
+1. client creation(t1) - setup_step <= 0; sv sets id, color and fd
+2. client sends message (t2-4) - setup_step <=1; msg = "SETUP.NAME";
+3. sv sets name, sv sends message(t2-4) - setup_step<=2; msg = "SETUP.NAME.ID.COLOR";
+4. client sends message(t2-4) - setup_step<=3; msg = "SETUP.DONE"; sv sets setup_done flag;
+
+
+epoll:
+    -> wait called on t1, checks for epollin on sv_socket,
+                        -> epollrdhup on each registered client socket.
+                        -> non blocking wait
+    -> wait called on t2-4, checks for epollin, epollout on each sv_socket
+            -> if the event is on a non setup_done client, do the procedure, if done, do the normal msg transmission
+
+epoll class: add monitored fd, private event_arr, wait function with settings, bool check_event with fd and event parameters
+
+coroutines: not really needed actually
