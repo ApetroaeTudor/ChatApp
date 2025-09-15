@@ -65,8 +65,8 @@ int main()
 
     std::cout<<colors::RED<<"MSG RECEIVED: "<<buffer<<colors::COL_END<<std::endl;
 
-    close(sv_socket);
-    close(cl_socket);
+    // close(sv_socket);
+    // close(cl_socket);
 
     return 0;
 }

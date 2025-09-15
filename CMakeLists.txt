@@ -8,14 +8,18 @@ include_directories(${CMAKE_SOURCE_DIR}/include
                     ${CMAKE_SOURCE_DIR}/include/Coroutines
                     ${CMAKE_SOURCE_DIR}/include/Client
                     ${CMAKE_SOURCE_DIR}/include/Server
+                    ${CMAKE_SOURCE_DIR}/include/Atomic_queue
+                    ${CMAKE_SOURCE_DIR}/include/Polling
                     )
 
 add_executable(Client
             src/Client/Client_main.cpp
             src/Client/Client.cpp
+            src/Polling/Epoll.cpp
             )
 
 add_executable(Server
             src/Server/Server_main.cpp
             src/Server/Server.cpp
+            src/Polling/Epoll.cpp
             )

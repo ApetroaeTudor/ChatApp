@@ -60,7 +60,7 @@ void Client::send_msg(std::string &&msg) const
     }
     else
     {
-        throw std::runtime_error("The socked is initialized\n");
+        throw std::runtime_error("The socket is not initialized\n");
     }
 }
 
@@ -73,7 +73,7 @@ void Client::receive_msg(struct MessageFrame &message_frame) const
             throw std::runtime_error("Failed read\n");
         }
     }
-    throw std::runtime_error("The socked is initialized\n");
+    throw std::runtime_error("The socket is not initialized\n");
 }
 
 void Client::make_cl_socket_nonblocking()

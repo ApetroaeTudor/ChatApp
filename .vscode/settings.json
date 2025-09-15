@@ -54,6 +54,18 @@
         "sstream": "cpp",
         "stop_token": "cpp",
         "streambuf": "cpp",
-        "typeinfo": "cpp"
+        "typeinfo": "cpp",
+        "cstring": "cpp",
+        "bitset": "cpp",
+        "complex": "cpp",
+        "forward_list": "cpp",
+        "map": "cpp",
+        "set": "cpp",
+        "unordered_set": "cpp",
+        "optional": "cpp",
+        "fstream": "cpp",
+        "iomanip": "cpp",
+        "cinttypes": "cpp",
+        "typeindex": "cpp"
     }
 }
