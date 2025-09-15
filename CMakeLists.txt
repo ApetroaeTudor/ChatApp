@@ -20,6 +20,6 @@ add_executable(Client
 
 add_executable(Server
             src/Server/Server_main.cpp
-            src/Server/Server.cpp
+            # src/Server/Server.cpp
             src/Polling/Epoll.cpp
             )

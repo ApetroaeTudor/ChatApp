@@ -6,7 +6,7 @@ chat app
 
 
 - CLIENT:
--> client takes in a parameter that says the server port
+-> client takes in a parameter that says the server addr -X-
 -> client links the ctrl c signal for exiting
 -> client runs a send_thread and a receive_thread
 

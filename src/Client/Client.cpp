@@ -1,23 +1,6 @@
 #include "Client.h"
 
-
-Client &Client::operator=(Client &&other)noexcept
-{
-    if (this != &other)
-    {
-        this->s_addr = other.s_addr;
-        memset(&other.s_addr, 0, sizeof(other.s_addr));
-
-        this->cl_socket = other.cl_socket;
-        other.cl_socket = -1;
-    }
-    return *this;
-}
-
-Client::Client(Client &&other) noexcept
-{
-    *this = std::move(other);
-}
+#include <iostream>
 
 
 
@@ -48,12 +31,12 @@ Client::~Client()
     this->cl_socket = 0;
 }
 
-void Client::send_msg(std::string &&msg) const 
+void Client::send_msg(std::string&& msg) const
 {
-    std::string msg_to_send = std::move(msg);
+    auto msg_to_send = std::move(msg);
     if (this->cl_socket >= 0)
     {
-        if (send(cl_socket, msg_to_send.c_str(), msg_to_send.size(), 0) < 0)
+        if (send(cl_socket, msg_to_send.data(), msg_to_send.size(), 0) < 0)
         {
             throw std::runtime_error("Failed to send msg\n");
         }
@@ -64,27 +47,37 @@ void Client::send_msg(std::string &&msg) const
     }
 }
 
-void Client::receive_msg(struct MessageFrame &message_frame) const
+
+
+int Client::receive_msg(struct MessageFrame &message_frame) const
 {
     if (this->cl_socket >= 0)
     {
-        if (recv(this->cl_socket, &message_frame.msg, message_frame.msg_len, 0) < 0)
+        int ret = recv(this->cl_socket, &message_frame.msg, message_frame.msg_len, 0);
+        if (ret < 0)
         {
-            throw std::runtime_error("Failed read\n");
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+            {
+                return 0;
+            }
+            else
+            {
+                throw std::runtime_error("Failed read\n");
+            }
         }
+        return ret;
     }
     throw std::runtime_error("The socket is not initialized\n");
 }
 
 void Client::make_cl_socket_nonblocking()
 {
-    if(cl_socket>=0)
+    if (cl_socket >= 0)
     {
-        int flags = fcntl(this->cl_socket,F_GETFL,0);
-        if( (flags & O_NONBLOCK) !=O_NONBLOCK)
+        int flags = fcntl(this->cl_socket, F_GETFL, 0);
+        if ((flags & O_NONBLOCK) != O_NONBLOCK)
         {
-            fcntl(this->cl_socket,F_SETFL,flags|O_NONBLOCK);
-
+            fcntl(this->cl_socket, F_SETFL, flags | O_NONBLOCK);
         }
     }
 }
@@ -92,4 +85,93 @@ void Client::make_cl_socket_nonblocking()
 int Client::get_cl_socket() const
 {
     return this->cl_socket;
+}
+
+
+//////////////////////////////////////////////////////////////////////////////// - helper functions
+
+
+void Client::send_msg_from_stdin(std::string &buffer)
+{
+    try
+    {
+        if (std::getline(std::cin, buffer))
+        {
+            if (buffer == "#quit")
+            {
+                client_done_source.request_stop();
+                this->send_msg(std::string("Client Disconnecting..\n"));
+            }
+            else
+            {
+                this->send_msg(std::move(buffer));
+            }
+        }
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << e.what() << '\n';
+    }
+}
+
+void Client::receive_msg_from_sv(MessageFrame &msg_frame)
+{
+    try
+    {
+        int ret = this->receive_msg(msg_frame);
+        if (ret == 0)
+        {
+            client_done_source.request_stop();
+        }
+        else
+        {
+            std::cout << colors::BLUE << "Message Received: " << msg_frame.msg << colors::COL_END << std::endl;
+        }
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << e.what() << '\n';
+    }
+}
+
+////////////////////////////////////////////////////////////////////////// - main loop functions
+
+void Client::start_send_loop()
+{
+
+    EpollManager em;
+    em.add_monitored_fd(EpollPair{STDIN_FILENO, EPOLLIN});
+    int events_nr;
+    std::string buffer;
+
+    while (!client_done_source.get_token().stop_requested())
+    {
+        events_nr = em.wait_events();
+        if (em.check_event(STDIN_FILENO, EPOLLIN, events_nr))
+        {
+            send_msg_from_stdin(buffer);
+        }
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+}
+
+void Client::start_receive_loop()
+{
+
+    EpollManager em;
+
+    em.add_monitored_fd(EpollPair{this->cl_socket, EPOLLIN});
+    int events_nr;
+    MessageFrame msg_frame;
+    msg_frame.msg_len = constants::MAX_LEN;
+    while (!client_done_source.get_token().stop_requested())
+    {
+        events_nr = em.wait_events();
+
+        if (em.check_event(this->cl_socket, EPOLLIN, events_nr))
+        {
+            receive_msg_from_sv(msg_frame);
+        }
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
 }

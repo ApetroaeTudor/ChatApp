@@ -1,78 +1,47 @@
 #include "resources.h"
 #include <thread>
 #include <iostream>
-#include <chrono>
-#include <sys/epoll.h>
-#include "Epoll.h"
 
 #include "Client.h"
 
-void main_loop(Client &cl, EpollManager &em);
 
-void main_loop(Client &cl, EpollManager &em)
+
+
+int main(int argc, char *argv[])
 {
 
-    int events_nr;
-    MessageFrame msg_frame;
-    char buffer[constants::MAX_LEN];
-
-    while (1)
+    std::string_view sv_addr = constants::SV_ADDR;
+    if (argc == 2)
     {
-        events_nr = em.wait_events();
-        if (em.check_event(STDIN_FILENO, EPOLLIN, events_nr))
-        {
-            try
-            {
-                while (fgets(buffer, constants::MAX_LEN - 1, stdin) != nullptr)
-                {
-                    buffer[strcspn(buffer, "\n")] = 0; 
-                    if (strcmp(buffer, "#quit") == 0)
-                        return;
-
-                    cl.send_msg(buffer);
-                }
-            }
-            catch (const std::exception &e)
-            {
-                std::cerr << e.what() << '\n';
-            }
-        }
-        else if (em.check_event(cl.get_cl_socket(), EPOLLIN, events_nr))
-        {
-            try
-            {
-                cl.receive_msg(msg_frame);
-                std::cout << colors::BLUE << "Message Received: " << msg_frame.msg << colors::COL_END << std::endl;
-            }
-            catch (const std::exception &e)
-            {
-                std::cerr << e.what() << '\n';
-            }
-        }
-
-        std::this_thread::sleep_for(std::chrono::microseconds(50));
+        sv_addr = std::string_view(argv[1]);
     }
-}
+    else if (argc > 2)
+    {
+        std::cerr << "Correct call: ./Server <OPTIONAL:sv_addr>, if not specified then 127.0.0.1 is used\n";
+        return EXIT_FAILURE;
+    }
 
-int main()
-{
+    if (static_cast<int>(std::count(sv_addr.begin(), sv_addr.end(), '.') < 3))
+    {
+        std::cerr << "Invalid IPv4 format\n";
+        return EXIT_FAILURE;
+    }
 
     try
     {
-        Client cl(AF_INET, SOCK_STREAM, 0, constants::SV_ADDR, constants::PORT);
+        Client cl(AF_INET, SOCK_STREAM, 0, sv_addr.data(), constants::PORT);
         cl.make_cl_socket_nonblocking();
-
-        EpollManager em;
-        em.add_monitored_fd(EpollPair{STDIN_FILENO, EPOLLIN});
-        em.add_monitored_fd(EpollPair{cl.get_cl_socket(), EPOLLIN});
-
-        main_loop(cl, em);
+        std::jthread send_jthr([&]()
+                               { cl.start_send_loop(); });
+        std::jthread recv_jthr([&]()
+                               { cl.start_receive_loop(); });
     }
     catch (const std::exception &e)
     {
         std::cerr << e.what() << '\n';
-        exit(EXIT_FAILURE);
+        return EXIT_FAILURE;
     }
 
     return 0;
 }
+
