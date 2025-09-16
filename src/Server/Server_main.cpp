@@ -2,10 +2,22 @@
 #include <unistd.h>
 #include <iostream>
 #include "Server.h"
+#include "JThreadDispatcher.h"
+
+using AtomicQueueString = atomic_queue::AtomicQueue2<std::string, constants::QUEUE_SIZE>;
+using ServerThreadManager = ServerManager<AtomicQueueString>;
 
 int main(int argc, char* argv[])
 {
 
+    Server<AtomicQueueString,ServerThreadManager> MAIN_SERVER(
+        AF_INET,
+        SOCK_STREAM,
+        0,
+        constants::PORT,
+        SO_REUSEADDR | SO_REUSEPORT,
+        1
+        );
 
     std::string_view sv_addr = constants::SV_ADDR;
     if (argc == 2)

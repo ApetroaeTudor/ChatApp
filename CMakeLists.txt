@@ -16,7 +16,8 @@ add_executable(Client
             src/Client/Client_main.cpp
             src/Client/Client.cpp
             src/Polling/Epoll.cpp
-            )
+        include/Server/Client_Data.h
+)
 
 add_executable(Server
             src/Server/Server_main.cpp
