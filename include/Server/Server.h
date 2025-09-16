@@ -13,38 +13,46 @@
 #include <thread>
 #include <stop_token>
 #include <algorithm>
+#include <optional>
+#include <functional>
 
 #include "atomic_queue.h"
 
 // using AtomicQueueString = atomic_queue::AtomicQueue2<std::string, std::allocator<std::string>, constants::MAX_QUEUE>;
 
-template <concepts::NonBlockingAtomicStringQueue Queue_t>
+template<concepts::NonBlockingAtomicStringQueue Queue_t>
 struct Client_Data;
 
-template <concepts::NonBlockingAtomicStringQueue Queue_t>
-class IServer
-{
+template<concepts::NonBlockingAtomicStringQueue Queue_t>
+class IServer {
 public:
-    virtual int get_sv_socket() const override = 0;
-    virtual Client_Data<Queue_t> &get_client_ref(int cl_id) = 0;
-    virtual void add_client(std::array<Client_Data<Queue_t>, constants::MAX_CLIENTS> &clients, int fd) = 0;
+    virtual int get_sv_socket() const = 0;
+
+    virtual std::optional<std::reference_wrapper<Client_Data<Queue_t> > > get_client_ref(int cl_id) = 0;
+
+    virtual bool accept_client(bool non_blocking) = 0;
+
+    virtual void disconnect_client(int cl_id) = 0;
+
+    virtual void send_msg(std::string &&msg, int cl_id) const = 0;
+
+    virtual int receive_msg(MessageFrame &message_frame, int cl_id) const = 0;
 
     virtual ~IServer() = default;
 };
 
-namespace concepts
-{
-    template <typename D, typename Q>
-    concept ListenerLauncher = NonBlockingAtomicStringQueue<Q> && requires(D d, IServer<Q> sv) {
+namespace concepts {
+    template<typename D, typename Q>
+    concept ListenerLauncher = NonBlockingAtomicStringQueue<Q> && requires(D d, IServer<Q> sv)
+    {
         { d.launch_listener_loop(d) };
     };
 }
 
-template <concepts::NonBlockingAtomicStringQueue Queue_t>
-struct Client_Data
-{
+template<concepts::NonBlockingAtomicStringQueue Queue_t>
+struct Client_Data {
     inline static std::atomic<int> id{0};
-    const int personal_id;
+    int personal_id;
 
     int fd = -1;
     std::string name;
@@ -53,75 +61,234 @@ struct Client_Data
     std::atomic_flag initializing_done = ATOMIC_FLAG_INIT;
     Queue_t send_queue;
 
-    void update_client(int fd, std::string &&name, std::string_view color)
-    {
+    void update_client(int fd, std::string &&name, std::string_view color) {
         this->id = id;
         this->fd = fd;
         this->name = std::move(name);
-        this->color = color;
     }
 
-    void inc_init_stage()
-    {
-        int previous_step = this->init_step.fetch_add(1, std::memory_order_release);
-        if (previous_step + 1 == constants::FINAL_INIT_STAGE)
-        {
+    void inc_init_stage() {
+        int previous_step = this->init_step.fetch_add(1, std::memory_order_acq_rel);
+        if (previous_step + 1 == constants::FINAL_INIT_STAGE) {
             this->initializing_done.test_and_set(std::memory_order_release);
         }
     }
 
-    Client_Data()
-    {
+    explicit Client_Data(int fd = -1) {
+        this->fd = fd;
         personal_id = id.fetch_add(1, std::memory_order_relaxed);
     }
 
     ~Client_Data() = default;
+
     Client_Data(const Client_Data &other) = delete;
+
     Client_Data &operator=(const Client_Data &other) = delete;
+
     Client_Data(Client_Data &&other) = delete;
+
     Client_Data &operator=(Client_Data &&other) = delete;
 };
 
-template <concepts::NonBlockingAtomicStringQueue Queue_t, concepts::ListenerLauncher<Queue_t> Server_Manager_t>
-class Server : public IServer<Queue_t>
-{
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+template<concepts::NonBlockingAtomicStringQueue Queue_t, concepts::ListenerLauncher<Queue_t> Server_Manager_t>
+class Server : public IServer<Queue_t> {
 private:
-    struct sockaddr_in s_addr;
+    sockaddr_in s_addr{};
     int sv_socket = -1;
-    std::array<Client_Data<Queue_t>, constants::MAX_CLIENTS> clients;
+    std::array<std::optional<Client_Data<Queue_t> >, constants::MAX_CLIENTS> clients{};
     std::stop_source server_done_source{};
 
     Server_Manager_t sv_manager{};
 
+    int get_selected_client_fd(int cl_id) {
+        if (this->sv_socket < 0) {
+            throw std::runtime_error("SV socket not initialized\n");
+        }
+
+        auto selected_client = this->get_client_ref(cl_id);
+        if (!selected_client.has_value()) {
+            throw std::runtime_error("Client not available\n");
+        }
+
+        int selected_fd = selected_client.value().get().fd;
+        if (selected_fd < 0) {
+            throw std::runtime_error("Invalid client ID\n");
+        }
+
+        return selected_fd;
+    }
+
 public:
     Server(const Server &sv) = delete;
+
     Server &operator=(const Server &sv) = delete;
 
     Server(Server &&other) noexcept = delete;
+
     Server &operator=(Server &&other) noexcept = delete;
 
-    Server(int domain, int type, int protocol, int port, std::string_view sv_addr, int sock_opts, int optval);
-    Server(int domain, int type, int protocol, int port, int sock_opts, int optval);
+    Server(int domain, int type, int protocol, int port, std::string_view sv_addr, int sock_opts, int optval) {
+        if (inet_pton(domain, sv_addr.data(), &this->s_addr.sin_addr) <= 0) {
+            throw std::runtime_error("Failed to load network addr in struct\n");
+        }
+        this->s_addr.sin_family = domain;
+        this->s_addr.sin_port = htons(port);
+        this->sv_socket = socket(domain, type, protocol);
+        if (this->sv_socket < 0) {
+            throw std::runtime_error("Failed to open socket - Server\n");
+        }
 
-    ~Server();
+        if (setsockopt(sv_socket, SOL_SOCKET, sock_opts, &optval, sizeof(optval)) < 0) {
+            throw std::runtime_error("Failed to use setsockopt - Server\n");
+        }
 
-    void listen_connections(int max_connections) const;
+        if (bind(sv_socket, reinterpret_cast<sockaddr *>(&s_addr), sizeof(s_addr)) < 0) {
+            throw std::runtime_error("Failed to bind - Server\n");
+        }
+    }
 
-    int add_client_socket(int make_non_blocking);
+    Server(int domain, int type, int protocol, int port, int sock_opts, int optval) {
+        this->s_addr.sin_addr.s_addr = INADDR_ANY;
+        this->s_addr.sin_family = domain;
+        this->s_addr.sin_port = htons(port);
 
-    void make_sv_socket_nonblocking();
+        this->sv_socket = socket(domain, type, protocol);
+        if (this->sv_socket < 0) {
+            throw std::runtime_error("Failed to open socket - Server\n");
+        }
+
+        if (setsockopt(sv_socket, SOL_SOCKET, sock_opts, &optval, sizeof(optval)) < 0) {
+            throw std::runtime_error("Failed to use setsockopt - Server\n");
+        }
+
+        if (bind(sv_socket, reinterpret_cast<sockaddr *>(&s_addr), sizeof(s_addr)) < 0) {
+            throw std::runtime_error("Failed to bind - Server\n");
+        }
+    }
+
+    ~Server() {
+        for (auto &cl: this->clients) {
+            close(cl.fd);
+        }
+        close(sv_socket);
+    }
+
+    void listen_connections() const {
+        if (listen(this->sv_socket, constants::MAX_CLIENTS) < 0) {
+            throw std::runtime_error("Failed to listen - Server\n");
+        }
+    }
+
+    void make_sv_socket_nonblocking() {
+        if (sv_socket < 0) {
+            throw std::runtime_error("Sv socket not initialized\n");
+        }
+
+        int flags = fcntl(this->sv_socket, F_GETFL, 0);
+        if (flags < 0) {
+            throw std::runtime_error("Could not fetch flags\n");
+        }
+
+        if ((flags & O_NONBLOCK) != O_NONBLOCK) {
+            if (fcntl(this->sv_socket, F_SETFL, flags | O_NONBLOCK) < 0) {
+                throw std::runtime_error("Failed fcntl call\n");
+            }
+        }
+    }
+
+    void launch_server_loop() {
+    }
 
     ///////////////////////////////////////////////////////////////////// -- interface functions
 
-    int get_sv_socket() const override
-    {
+    [[nodiscard]] int get_sv_socket() const override {
         return this->sv_socket;
     }
 
-    Client_Data<Queue_t> &get_client_ref(int cl_id) override
-    {
+
+    std::optional<std::reference_wrapper<Client_Data<Queue_t> > > get_client_ref(int cl_id) override {
+        auto it = std::find_if(this->clients.begin(), this->clients.end(),
+                               [&cl_id](const std::optional<Client_Data<Queue_t> > &client) {
+                                   return (client.has_value() && client.value().personal_id == cl_id);
+                               });
+        if (it != this->clients.end()) {
+            return std::ref(**it);
+        }
+        return std::nullopt;
     }
-    void add_client(std::array < Client_Data<Queue_t>, constants::MAX_CLIENTS> & clients, int fd) override
-    {
+
+    void disconnect_client(int cl_id) override {
+        auto selected_client_optional_cpy = this->get_client_ref(cl_id);
+        if (!selected_client_optional_cpy.has_value()) {
+            throw std::runtime_error("Client not found\n");
+        }
+        close(selected_client_optional_cpy.value().get().fd);
+
+        for (auto &client: this->clients) {
+            if (client.has_value() && (&(client.value()) == &selected_client_optional_cpy.value().get())) {
+                client.reset();
+                return;
+            }
+        }
+    }
+
+    bool accept_client(const bool make_non_blocking) override {
+        if (this->sv_socket < 0) {
+            throw std::runtime_error("SV socket not initialized\n");
+        }
+        socklen_t addr_len = sizeof(s_addr);
+        int cl_socket = accept(sv_socket, (sockaddr *) (&s_addr), &addr_len);
+        if (cl_socket < 0) {
+            if (errno == EWOULDBLOCK || errno == EAGAIN) {
+                return false;
+            }
+            throw std::runtime_error("Failed to accept client\n");
+        }
+        if (make_non_blocking) {
+            int flags = fcntl(cl_socket, F_GETFL, 0);
+            if (flags < 0) {
+                // TODO: send err msg to client
+                close(cl_socket);
+                throw std::runtime_error("Failed to get flags on client\n");
+            }
+            if (fcntl(cl_socket, F_SETFL, flags | O_NONBLOCK) < 0) {
+                // TODO: send err msg to client
+                close(cl_socket);
+                throw std::runtime_error("Failed fcntl call\n");
+            }
+        }
+
+        auto free_slot = std::find_if(this->clients.begin(), this->clients.end(),
+                                      [](const auto &opt_it) { return !opt_it.has_value(); });
+
+        if (free_slot != this->clients.end()) {
+            *free_slot = std::make_optional<Client_Data<Queue_t> >(cl_socket);
+            return true;
+        } else {
+            // TODO: send a deny message to client
+            close(cl_socket); // no place for the client
+        }
+        return false;
+    }
+
+    //////////////////////////////////////////////////////////////////////////////// send,receive
+
+    void send_msg(std::string &&msg, int cl_id) const override {
+        int selected_fd = get_selected_client_fd(cl_id);
+        std::string msg_to_send = std::move(msg);
+        if (send(selected_fd, msg_to_send.c_str(), msg_to_send.size(), 0) < 0) {
+            throw std::runtime_error("Failed to send msg\n");
+        }
+    }
+
+    int receive_msg(MessageFrame &message_frame, int cl_id) const override {
+        int selected_fd = get_selected_client_fd(cl_id);
+        int received_msg_len = recv(selected_fd, &message_frame.msg, message_frame.msg_len, 0);
+        if (received_msg_len < 0) {
+            throw std::runtime_error("Failed to receive msg\n");
+        }
+        return received_msg_len;
     }
 };

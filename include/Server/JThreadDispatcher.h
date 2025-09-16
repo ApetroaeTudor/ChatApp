@@ -12,14 +12,9 @@ private:
     const int nr_of_worker_threads = 3;
     Queue_t broadcast_queue;
 
-    void send_msg(std::string &&msg, int cl_id) const override
-    {
-    }
-    int receive_msg(MessageFrame &message_frame, int cl_id) const override
-    {
-    }
 
-    void listener_loop(Server &sv)
+
+    void listener_loop(IServer &isv)
     {
     }
 
@@ -31,7 +26,7 @@ public:
     ServerManager(ServerManager &&other) noexcept = delete;
     Queue_t received_msg_queue;
 
-    std::jthread launch_listener_loop(Server &sv)
+    std::jthread launch_listener_loop(IServer &isv)
     {
         return std::jthread([&]()
                             { listener_loop(sv) });
