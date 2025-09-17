@@ -10,6 +10,7 @@ include_directories(${CMAKE_SOURCE_DIR}/include
                     ${CMAKE_SOURCE_DIR}/include/Server
                     ${CMAKE_SOURCE_DIR}/include/Atomic_queue
                     ${CMAKE_SOURCE_DIR}/include/Polling
+                    ${CMAKE_SOURCE_DIR}/include/Messages
                     )
 
 add_executable(Client

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "resources.h"
+#include "../resources.h"
 
 
 struct MessageFrame

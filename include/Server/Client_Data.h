@@ -12,8 +12,7 @@ struct Client_Data {
 
     int fd = -1;
     std::string name;
-    std::string_view color = colors::WHITE;
-    std::atomic<int> init_step{0};
+    std::string_view color = colors::COLOR_ARR[static_cast<size_t>(colors::Colors::WHITE)];
     std::atomic_flag initializing_done = ATOMIC_FLAG_INIT;
 
     Queue_t send_queue;
@@ -24,12 +23,6 @@ struct Client_Data {
         this->color = color_;
     }
 
-    void inc_init_stage() {
-        if (const int previous_step = this->init_step.fetch_add(1, std::memory_order_acq_rel);
-            previous_step + 1 == constants::FINAL_INIT_STAGE) {
-            this->initializing_done.test_and_set(std::memory_order_release);
-        }
-    }
 
     explicit Client_Data(int fd = -1) {
         this->fd = fd;

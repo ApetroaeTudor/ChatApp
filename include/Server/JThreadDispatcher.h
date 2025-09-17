@@ -6,6 +6,7 @@
 #include "Server.h"
 #include "Epoll.h"
 #include "MessageFrame.h"
+#include "Server_Message.h"
 
 template<concepts::NonBlockingAtomicStringQueue Queue_t>
 class ServerManager {
