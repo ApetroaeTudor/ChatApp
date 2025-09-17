@@ -4,14 +4,14 @@
 
 
 
-Client::Client(int domain, int type, int protocol, std::string sv_addr, int port)
+Client::Client(int domain, int type, int protocol, std::string_view sv_addr, int port)
 {
     this->cl_socket = socket(domain, type, protocol);
     if (cl_socket < 0)
     {
         throw std::runtime_error("Failed to open socket - Client\n");
     }
-    if (inet_pton(domain, sv_addr.c_str(), &this->s_addr.sin_addr) <= 0)
+    if (inet_pton(domain, sv_addr.data(), &this->s_addr.sin_addr) <= 0)
     {
         throw std::runtime_error("Failed to load network addr in struct\n");
     }

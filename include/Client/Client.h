@@ -35,7 +35,7 @@ public:
     Client(Client &&other) noexcept = delete;
     Client &operator=(Client &&other) noexcept = delete;
 
-    Client(int domain, int type, int protocol, std::string sv_addr, int port);
+    Client(int domain, int type, int protocol, std::string_view sv_addr, int port);
 
     ~Client();
 
