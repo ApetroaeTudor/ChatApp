@@ -45,6 +45,32 @@ SERVER: clients vector. each client has: ID, NAME, COLOR
                 -> if write_ready, check the "broadcast" variable, if not set, then set it, and send the broadcast msg to all owned client fds.
                 
 
+new constants: MAX_CLIENTS_PER_THREAD
+MAX_NR_OF_THREADS
+MAX_CLIENTS = MAX_NR_OF_THREADS * MAX_CLIENTS_PER_THREAD
+
+new thread opened when the clients dont fit in existing threads
+th0 receives a connect, it assigns it to a worker thread.
+th0 has a std::array<std::optional<std::pair<int,jthread_WITH_ID>,MAX_NR_OF_THREADS>;
+        ->> the int here is incremented each time a thread is assigned a task
+        ->> when a thread is created it is assigned with int last_called = 0
+
+when exiting, a launched worker thread puts on the queue a special message
+on special msg detection -> optional .reset();
+thread selection alg:
+    ->> least recently selected. iterate the array. find the minimum int in the array if the optional has data
+    ->> put a message on the queue with the corresponding thread id
+
+->>the worker thread takes the first init message from the client.
+->>sets name
+->>sends an init message to the client - WITH color and ID
+->>receives an init fin message from the client
+
+->> if the client is initialized, EPOLLOUT, no broadcast msg on the queue ->> check client queue in the sv
+
+a thread exits if it has no clients - when launched, a thread gets one client
+
+
 each client has: ID, FD, NAME, COLOR, needs_broadcast(atomic flag), setup_step(atomic int), setup_done(atomic flag)
 setup process: 
 1. client creation(t1) - setup_step <= 0; sv sets id, color and fd

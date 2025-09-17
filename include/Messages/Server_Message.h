@@ -5,7 +5,7 @@
 #include <numeric>
 
 constexpr char split_token = '`';
-constexpr int nr_of_separations = 7;
+constexpr int nr_of_separations = 8;
 
 struct Server_Message {
     std::string thread_number;
@@ -15,13 +15,14 @@ struct Server_Message {
     std::string name;
     std::string color;
     std::string init_done;
+    std::string msg_content;
 
     std::string get_concatenated_msg() {
         return thread_number + split_token + action + split_token + fd + split_token + id + split_token + name +
-               split_token + color + split_token + init_done + split_token;
+               split_token + color + split_token + init_done + split_token + msg_content + split_token;
     }
 
-    void init_all_fields(const char* thr_nr, const char* action, const char* fd, const char* id, const char* name, const char* color, const char* init_done) {
+    void init_all_fields(const char* thr_nr, const char* action, const char* fd, const char* id, const char* name, const char* color, const char* init_done,const char* msg_content) {
         this->thread_number = thr_nr;
         this->action = action;
         this->fd = fd;
@@ -29,6 +30,7 @@ struct Server_Message {
         this->name = name;
         this->color = color;
         this->init_done = init_done;
+        this->msg_content = msg_content;
     }
 
 
@@ -47,5 +49,6 @@ struct Server_Message {
         std::getline(iss,name,split_token);
         std::getline(iss,color,split_token);
         std::getline(iss,init_done,split_token);
+        std::getline(iss,msg_content,split_token);
     }
 };

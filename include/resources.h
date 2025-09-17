@@ -21,12 +21,16 @@ namespace constructs {
 
 namespace constants {
     constexpr unsigned MAX_LEN = 512;
+
+    constexpr unsigned MAX_NR_OF_THREADS = 5;
+    constexpr unsigned MAX_CLIENTS_PER_THREAD = 3;
+
     constexpr unsigned PORT = 8080;
     constexpr std::string_view SV_ADDR = "127.0.0.1";
     constexpr unsigned MAX_EVENTS = 20;
     constexpr unsigned QUEUE_SIZE = 128;
     constexpr unsigned FINAL_INIT_STAGE = 3;
-    constexpr unsigned MAX_CLIENTS = 10;
+    constexpr unsigned MAX_CLIENTS = MAX_NR_OF_THREADS*MAX_CLIENTS_PER_THREAD;
 
 
     constexpr const char *NAME_UNINITIALIZED = "name_uninitialized";
