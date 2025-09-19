@@ -2,9 +2,13 @@
 
 #include <string_view>
 #include <concepts>
+#include <iostream>
 #include <string>
 #include <array>
 #include <utility>
+#include <chrono>
+#include <sys/eventfd.h>
+
 
 
 namespace concepts {
@@ -16,13 +20,11 @@ namespace concepts {
     };
 }
 
-namespace constructs {
-}
 
 namespace constants {
     constexpr unsigned MAX_LEN = 512;
 
-    constexpr unsigned MAX_NR_OF_THREADS = 5;
+    constexpr unsigned MAX_NR_OF_THREADS = 2;
     constexpr unsigned MAX_CLIENTS_PER_THREAD = 3;
 
     constexpr unsigned PORT = 8080;
@@ -47,15 +49,15 @@ namespace constants {
         CLOSED = 6
     };
 
-    constexpr std::array<std::string_view, 7> ACTIONS_ARR = {
+    constexpr std::array<const char*, 7> ACTIONS_ARR = {
         {
-            {"ACCEPT"},
-            {"ACCEPTED"},
-            {"INIT_REQ"},
-            {"INIT_DONE"},
-            {"BROADCAST"},
-            {"MSG_RECV"},
-            {"CLOSED"}
+            "ACCEPT",
+            "ACCEPTED",
+            "INIT_REQ",
+            "INIT_DONE",
+            "BROADCAST",
+            "MSG_RECV",
+            "CLOSED"
         }
     };
 }
@@ -109,6 +111,56 @@ namespace characters {
     constexpr char BACKSPACE = 8;
 }
 
-namespace util {
-#define ALWAYS_INLINE inline __attribute__((always_inline))
+
+namespace utils {
+
+    #define ALWAYS_INLINE inline __attribute__((always_inline))
+
+
+    ALWAYS_INLINE constexpr auto time_millis(int time_millis) {
+        return std::chrono::milliseconds(time_millis);
+    }
+
+    class ServerFullException: public std::runtime_error {
+    public:
+        explicit ServerFullException(const std::string& what_arg) : std::runtime_error(what_arg) {}
+    };
+
+    class QueueException: public std::runtime_error {
+    public:
+        explicit QueueException(const std::string& what_arg) : std::runtime_error(what_arg) {}
+    };
+
+    class ClientConnectionException: public std::runtime_error {
+        public:
+        explicit ClientConnectionException(const std::string& what_arg) : std::runtime_error(what_arg) {}
+    };
+
+    ALWAYS_INLINE int cast_int(auto i) {
+        return static_cast<int>(i);
+    }
+
+    ALWAYS_INLINE constexpr std::string_view get_color(colors::Colors color_type) {
+        return colors::COLOR_ARR[static_cast<size_t>(color_type)];
+    }
+
+    ALWAYS_INLINE constexpr const char* get_action(constants::Actions action_type) {
+        return constants::ACTIONS_ARR[static_cast<size_t>(action_type)];
+    }
+
+    ALWAYS_INLINE int get_evfd(int flags) {
+        int evfd = eventfd(0,flags);
+        if (evfd<0) {
+            throw std::runtime_error("eventfd error\n");
+        }
+        return evfd;
+    }
+
+    ALWAYS_INLINE void cerr_out_red(const char* msg) {
+        std::cerr << utils::get_color(colors::Colors::BRIGHT_RED) << msg << utils::get_color(
+                            colors::Colors::COL_END) << std::endl;
+    }
+
 }
+
+

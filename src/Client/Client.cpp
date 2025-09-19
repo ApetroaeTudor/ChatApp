@@ -162,7 +162,6 @@ void Client::start_send_loop() {
     em.add_monitored_fd(EpollPair{STDIN_FILENO, EPOLLIN});
     int events_nr;
     std::string buffer;
-    std::cout << "Please insert your name:\n";
 
 
     while (!client_done_source.get_token().stop_requested()) {

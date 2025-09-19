@@ -8,14 +8,14 @@ constexpr char split_token = '`';
 constexpr int nr_of_separations = 8;
 
 struct Server_Message {
-    std::string thread_number;
-    std::string action;
-    std::string fd;
-    std::string id;
-    std::string name;
-    std::string color;
-    std::string init_done;
-    std::string msg_content;
+    std::string thread_number{};
+    std::string action{};
+    std::string fd{};
+    std::string id{};
+    std::string name{};
+    std::string color{};
+    std::string init_done{};
+    std::string msg_content{};
 
     std::string get_concatenated_msg() {
         return thread_number + split_token + action + split_token + fd + split_token + id + split_token + name +
