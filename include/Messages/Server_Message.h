@@ -22,6 +22,17 @@ struct Server_Message {
                split_token + color + split_token + init_done + split_token + msg_content + split_token;
     }
 
+    void reset_msg() {
+        thread_number.clear();
+        action.clear();
+        fd.clear();
+        id.clear();
+        name.clear();
+        color.clear();
+        init_done.clear();
+        msg_content.clear();
+    }
+
     void init_all_fields(const char* thr_nr, const char* action, const char* fd, const char* id, const char* name, const char* color, const char* init_done,const char* msg_content) {
         this->thread_number = thr_nr;
         this->action = action;

@@ -7,7 +7,9 @@
 #include <array>
 #include <utility>
 #include <chrono>
+#include <random>
 #include <sys/eventfd.h>
+
 
 
 
@@ -22,6 +24,14 @@ namespace concepts {
 
 
 namespace constants {
+
+    constexpr int INITIAL_STATE = 0;
+    constexpr int REQUESTED_INIT = 1;
+    constexpr int SENT_INIT_CONFIRMATION = 2;
+    constexpr int INIT_DONE = 3;
+
+
+
     constexpr unsigned MAX_LEN = 512;
 
     constexpr unsigned MAX_NR_OF_THREADS = 2;
@@ -38,6 +48,7 @@ namespace constants {
     constexpr const char *NAME_UNINITIALIZED = "name_uninitialized";
     constexpr const char *ID_UNINITIALIZED = "id_uninitialized";
     constexpr const char *ANY_THREAD = "any_thread";
+    constexpr const char *QUIT_MSG = "#quit";
 
     enum class Actions: size_t {
         ACCEPT = 0,
@@ -144,6 +155,8 @@ namespace utils {
     };
 
 
+
+
     ALWAYS_INLINE constexpr std::string_view get_color(colors::Colors color_type) {
         return colors::COLOR_ARR[static_cast<size_t>(color_type)];
     }
@@ -175,6 +188,14 @@ namespace utils {
                             colors::Colors::COL_END) << std::endl;
     }
 
+    ALWAYS_INLINE std::string_view getRandomColor() {
+        static std::mt19937 rng{std::random_device{}()};
+        std::uniform_int_distribution<> dist(1, 14);
+        return colors::COLOR_ARR[dist(rng)];
+    }
+
 }
+
+#define C_E colors::COLOR_ARR[static_cast<size_t>(colors::Colors::COL_END)]
 
 

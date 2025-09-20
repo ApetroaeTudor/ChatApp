@@ -6,7 +6,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <string>
-#include <string.h>
+#include <cstring>
 #include <arpa/inet.h>
 #include <stdexcept>
 #include <fcntl.h>

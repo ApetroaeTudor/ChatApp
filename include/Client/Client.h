@@ -10,6 +10,7 @@
 #include <atomic>
 #include <mutex>
 #include <arpa/inet.h>
+#include <sys/eventfd.h>
 
 #include "Server_Message.h"
 
@@ -19,9 +20,17 @@ private:
     sockaddr_in s_addr;
     std::mutex data_mutex;
 
+    int cl_event_fd;
+
+
+
     std::string name;
-    std::string_view color;
+    std::string_view color=utils::get_color(colors::Colors::RED);
     std::string id;
+
+
+    std::atomic_flag init_req = ATOMIC_FLAG_INIT;
+    std::atomic_flag init_done = ATOMIC_FLAG_INIT;
 
     int cl_socket = -1;
     std::stop_source client_done_source{};
@@ -31,11 +40,17 @@ private:
 
     void receive_msg_from_sv(MessageFrame &msg_frame);
 
+    void update_color(const std::string& color);
+
     ////////////////////////////////////////////////////
 
     void send_msg(std::string &&msg) const;
 
+    void finalize_init(Server_Message& server_msg);
+
     int receive_msg(struct MessageFrame &message_frame) const;
+
+    bool is_initialized()const;
 
 public:
     Client(const Client &cl) = delete;

@@ -13,9 +13,18 @@ struct Client_Data {
     int fd = -1;
     std::string name;
     std::string_view color = colors::COLOR_ARR[static_cast<size_t>(colors::Colors::WHITE)];
-    std::atomic_flag initializing_done = ATOMIC_FLAG_INIT;
+
+    std::atomic<int> init_state{constants::INITIAL_STATE};
 
     Queue_t send_queue;
+
+    void inc_state() {
+        this->init_state.fetch_add(1, std::memory_order_release);
+    }
+    int get_state() {
+        return this->init_state.load(std::memory_order_acquire);
+    }
+
 
     void update_client(int fd_, std::string &&name_, std::string_view color_) {
         this->fd = fd_;
@@ -27,6 +36,7 @@ struct Client_Data {
     explicit Client_Data(int fd = -1) {
         this->fd = fd;
         personal_id = id.fetch_add(1, std::memory_order_relaxed);
+        this->color = utils::getRandomColor();
     }
 
     ~Client_Data() = default;
