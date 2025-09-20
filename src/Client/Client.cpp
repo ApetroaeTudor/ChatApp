@@ -88,7 +88,7 @@ void Client::send_msg_from_stdin(std::string &buffer, Server_Message &msg) {
             }
         }
     } catch (const std::exception &e) {
-        std::cerr << e.what() << '\n';
+        utils::cerr_out_err(e.what());
     }
 }
 
@@ -102,7 +102,7 @@ void Client::receive_msg_from_sv(MessageFrame &msg_frame) {
                 size_t>(colors::Colors::COL_END)] << std::endl;
         }
     } catch (const std::exception &e) {
-        std::cerr << e.what() << '\n';
+        utils::cerr_out_err(e.what());
     }
 }
 

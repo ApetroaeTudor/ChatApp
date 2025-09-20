@@ -10,13 +10,18 @@
 #include <utility>
 #include <sys/eventfd.h>
 #include <tuple>
-#include <ctype.h>
+#include <cctype>
+#include <mutex>
 
 
 //first int is nr of allocated clients
 //second int is personal eventfd
-using worker_arr_t = std::array<std::optional<std::tuple<int, int, std::jthread> >, (constants::MAX_NR_OF_THREADS)>;
+using worker_arr_t = std::array<std::optional<std::tuple<int, int, std::jthread>>, (constants::MAX_NR_OF_THREADS)>;
 
+
+inline bool is_worker_arr_empty(const worker_arr_t& arr) {
+    return std::find_if(arr.begin(),arr.end(),[&](const auto& elem){return elem.has_value(); }) == arr.end();
+}
 
 inline std::pair<int, int> get_min_and_idx(
     const worker_arr_t &arr) {
@@ -33,11 +38,25 @@ inline std::pair<int, int> get_min_and_idx(
     return {min, min_idx}; // returns min_idx == -1 on no values
 }
 
+inline std::pair<int, int> get_max_and_idx(
+    const worker_arr_t &arr) {
+    int max = 0;
+    int idx = 0;
+    int max_idx = -1;
+    for (const auto &elem: arr) {
+        if (elem.has_value() && std::get<0>(elem.value()) > max) {
+            max = std::get<0>(elem.value());
+            max_idx = idx;
+        }
+        ++idx;
+    }
+    return {max, max_idx}; // returns min_idx == -1 on no values
+}
+
 
 template<concepts::NonBlockingAtomicStringQueue Queue_t>
-class ServerManager {
+class ServerThreadManager {
 private:
-    std::atomic<int> nr_of_connected_clients{0};
     int max_clients_per_thread{1};
 
     int nr_of_launched_threads{0};
@@ -46,8 +65,9 @@ private:
     Queue_t q_worker_to_listener;
     Queue_t q_listener_to_worker;
 
-    // first int is number of clients on that thread
     worker_arr_t worker_threads;
+
+
 
     void assign_client_to_worker(int thread_index, int socket, int id, int event_fd) {
         Server_Message msg{
@@ -60,17 +80,19 @@ private:
             throw utils::QueueException("Failed to push new worker to queue");
         }
 
-        uint64_t u = 1;
+        const uint64_t u = 1;
         if (write(event_fd, &u, sizeof(uint64_t)) != sizeof(uint64_t)) {
             throw std::runtime_error("Failed to send event_fd");
         }
     }
 
-    void process_new_client(IServer<Queue_t> &isv, int socket, int id) {
+
+
+    void process_new_client(IServer<Queue_t> &isv, int socket, int id, int listener_evfd) {
         if (this->nr_of_launched_threads == 0) {
             int evfd = utils::get_evfd(EFD_NONBLOCK);
-            worker_threads[0].emplace(std::tuple(0, evfd, std::jthread([this, &isv, socket,id,evfd]() {
-                this->worker_loop(isv, socket, id, 0, evfd);
+            worker_threads[0].emplace(std::tuple(0, evfd, std::jthread([this, &isv, socket,id,evfd, listener_evfd]() {
+                this->worker_loop(isv, socket, id, 0, evfd,listener_evfd);
             })));
             ++this->nr_of_launched_threads;
             ++std::get<0>(*worker_threads[0]);
@@ -78,8 +100,8 @@ private:
             auto min_minidx = get_min_and_idx(this->worker_threads);
             if (min_minidx.second < 0) [[unlikely]]{
                 int evfd = utils::get_evfd(EFD_NONBLOCK);
-                worker_threads[0].emplace(std::tuple(0, evfd, std::jthread([this,&isv,socket,id,evfd]() {
-                    this->worker_loop(isv, socket, id, 0, evfd);
+                worker_threads[0].emplace(std::tuple(0, evfd, std::jthread([this,&isv,socket,id,evfd,listener_evfd]() {
+                    this->worker_loop(isv, socket, id, 0, evfd,listener_evfd);
                 })));
                 ++this->nr_of_launched_threads;
                 ++std::get<0>(*worker_threads[0]);
@@ -107,8 +129,8 @@ private:
                         int nr_thr = this->nr_of_launched_threads;
                         int evfd = utils::get_evfd(EFD_NONBLOCK);
                         worker_threads[this->nr_of_launched_threads].emplace(std::tuple(
-                            0, evfd, std::jthread([this,&isv,socket,id,nr_thr,evfd]() {
-                                this->worker_loop(isv, socket, id, nr_thr, evfd);
+                            0, evfd, std::jthread([this,&isv,socket,id,nr_thr,evfd,listener_evfd]() {
+                                this->worker_loop(isv, socket, id, nr_thr, evfd,listener_evfd);
                             })));
                         ++std::get<0>(*worker_threads[nr_thr]);
                         ++this->nr_of_launched_threads;
@@ -118,14 +140,97 @@ private:
         }
     }
 
+    void worker_push(constants::Actions action, int thr_personal_idx, int cl_id, int listener_evfd) {
+        if (listener_evfd<0) {
+            throw std::runtime_error("Server listener event fd is invalid!\n");
+        }
+
+        Server_Message msg {
+        std::to_string(thr_personal_idx),
+        utils::get_action(action),
+        " ",
+        std::to_string(cl_id)};
+        if (!this->q_worker_to_listener.try_push(msg.get_concatenated_msg())) {
+            throw utils::QueueException("Failed to push disconnect client msg to Queue!\n");
+        }
+        const uint64_t u = 1;
+        if ( write(listener_evfd,&u,sizeof(uint64_t))!=sizeof(uint64_t) ) {
+            throw std::runtime_error("Failed to send to listener eventfd\n");
+        }
+    }
+
+
+    void worker_client_disconnect(int thr_personal_idx) {
+        if (!this->worker_threads[thr_personal_idx].has_value()) {
+            throw utils::ThreadManagingException("Can't disconnect from a thread that isn't running\n");
+        }
+        std::pair current_pair = {std::get<0>(*this->worker_threads[thr_personal_idx]),std::get<1>(*this->worker_threads[thr_personal_idx])};
+        if (std::get<0>(current_pair) <=0) {
+            throw utils::ThreadManagingException("Can't disconnect from a thread that has no connections\n");
+        }
+        if (current_pair.first ==1) {
+            this->worker_threads[thr_personal_idx].reset();
+            --this->nr_of_launched_threads;
+        }
+        else {
+            --std::get<0>(*this->worker_threads[thr_personal_idx]);
+        }
+
+        std::pair max_maxidx = get_max_and_idx(this->worker_threads);
+        this->max_clients_per_thread = max_maxidx.first;
+        std::cout<<"New max clients per thr: " << this->max_clients_per_thread <<std::endl;
+    }
+
+
+    void listener_process_worker_to_listener_q(IServer<Queue_t>& isv,bool receive, const std::string& send_message, int listener_evfd) {
+        uint64_t u;
+        ssize_t bytes_read = read(listener_evfd, &u, sizeof(uint64_t));
+        if (bytes_read != sizeof(uint64_t)) {
+            if (bytes_read == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                // This was a spurious wake-up, not a critical error.
+                return;
+            }
+            throw std::runtime_error("Failed read on listener evfd\n");
+        }
+
+        if (receive) {
+            std::string recv_message;
+            if (this->q_worker_to_listener.try_pop(recv_message)) {
+                Server_Message msg;
+                msg.construct_from_string(recv_message);
+                if (msg.action== utils::get_action(constants::Actions::CL_DISCONNECTED)) {
+                    std::cout<<"Client disconnected\n";
+                    isv.disconnect_client(std::stoi(msg.id));
+                    if (!this->worker_threads[std::stoi(msg.thread_number)].has_value()) {
+                        throw utils::ThreadManagingException("Can't disconnect a client from an empty optional\n");
+                    }
+                    if (std::get<0>(*this->worker_threads[std::stoi(msg.thread_number)])==0) {
+                        throw utils::ThreadManagingException("Can't disconnect a client from a thread with 0 clients\n");
+                    }
+                    worker_client_disconnect(std::stoi(msg.thread_number));
+                }
+            }
+        }
+    }
+
     // first int represents the action
-    std::tuple<int, int, int> worker_check_listener_to_worker_q(EpollManager &em, int personal_index) {
+    std::tuple<int, int, int> worker_process_listener_to_worker_q(EpollManager &em, int personal_index,int personal_evfd) {
         std::string q_recv_msg;
         std::string q_send_msg;
         Server_Message server_msg;
 
+        uint64_t u;
+        ssize_t bytes_read = read(personal_evfd, &u, sizeof(uint64_t));
+        if (bytes_read != sizeof(uint64_t)) {
+            if (bytes_read == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                // This was a spurious wake-up, not a critical error.
+                return {-1, -1, -1};
+            }
+            throw std::runtime_error("Failed read on personal thread evfd\n");
+        }
+
         if (this->q_listener_to_worker.try_pop(q_recv_msg)) {
-            // std::cout<<"Thread nr: "<<personal_index<<" msg: "<<q_recv_msg<<std::endl;
+
             server_msg.construct_from_string(q_recv_msg);
             if (server_msg.thread_number == std::to_string(personal_index)) {
                 if (server_msg.action == utils::get_action(constants::Actions::ACCEPT)) {
@@ -135,30 +240,29 @@ private:
                         em.add_monitored_fd(EpollPair{tmp_fd,EPOLLIN | EPOLLOUT});
                         return {static_cast<int>(constants::Actions::ACCEPT), tmp_fd, tmp_id};
                     } catch (...) {
-                        utils::cerr_out_red("Bad string to int cast in worker loop - fd or id\n");
+                        utils::cerr_out_warning("Bad string to int cast in worker loop - fd or id\n");
                     }
                 }
             }
-            else if (this->q_listener_to_worker.try_push(q_recv_msg)) {
-                std::this_thread::sleep_for(utils::time_millis(10));
-            }
-            else {
+            else if (!this->q_listener_to_worker.try_push(q_recv_msg)) {
+                // std::this_thread::sleep_for(utils::time_millis(10));
                 throw utils::QueueException("Failed to put back rejected message\n");
             }
         }
-        return {-1, -1, -1};
+            return {-1, -1, -1};
+
     }
 
 
-    void worker_loop(IServer<Queue_t> &isv, int cl_fd, int cl_id, int personal_index, int personal_eventfd) {
-        std::cout << personal_eventfd << std::endl;
+    void worker_loop(IServer<Queue_t> &isv, int cl_fd, int cl_id, int personal_index, int personal_evfd, int listener_evfd) {
         EpollManager em;
         std::vector<std::pair<int, int> > clients = {{cl_fd, cl_id}};
         MessageFrame msg_frame;
         msg_frame.msg_len = constants::MAX_LEN;
 
         em.add_monitored_fd(EpollPair{cl_fd, EPOLLIN | EPOLLOUT});
-        em.add_monitored_fd(EpollPair{personal_eventfd,EPOLLIN});
+        em.add_monitored_fd(EpollPair{personal_evfd,EPOLLIN});
+
 
 
         int ret = -1;
@@ -166,26 +270,28 @@ private:
             ret = em.wait_events(-1);
             if (ret > 0) {
                 auto client_to_remove = clients.end();
-                std::tuple<int,int,int> listener_to_worker_q_tuple = {-1,-1,-1};
+                int client_id_to_disconnect = -1;
+                std::tuple listener_to_worker_q_tuple = {-1,-1,-1};
+
+                if (em.check_event(personal_evfd,EPOLLIN, ret)) {
+                    listener_to_worker_q_tuple = this->worker_process_listener_to_worker_q(em, personal_index, personal_evfd);
+                }
 
                 for (const auto &client: clients) {
-                    if (em.check_event(personal_eventfd,EPOLLIN, ret)) {
-                        listener_to_worker_q_tuple = this->worker_check_listener_to_worker_q(em, personal_index);
-                    }
+
 
                     if (em.check_event(client.first,EPOLLIN, ret)) {
                         if (isv.receive_msg(msg_frame, client.second) == 0) {
                             // client exit
-                            isv.disconnect_client(client.second);
-                            // send message to server Queue
+                            client_id_to_disconnect = client.second;
+                            // isv.disconnect_client(client.second);
                             client_to_remove = std::find_if(clients.begin(), clients.end(),
                                                             [&client](std::pair<int, int> a) {
                                                                 return a.second == client.second;
                                                             });
-                            std::cout << "Client disconnected from thread: " << personal_index << std::endl;
                             continue;
                         }
-                        std::cout << "Received msg on thr " << personal_index << ":" << msg_frame.msg << std::endl;
+                        std::cout<<"THR "<<personal_index<<": msg: "<<msg_frame.msg<<std::endl;
                         msg_frame.clear_msg();
                         // if stage == 0 take init message -> stage = 1
                         // if stage == 2 take init fin message -> stage = 3
@@ -200,8 +306,10 @@ private:
                         }
                     }
                 }
-                if (client_to_remove != clients.end()) {
+                if (client_to_remove != clients.end() && client_id_to_disconnect>=0) {
+                    // must send cl_disconnected msg to q worker to listener with the client ID to disconnect, and thread ID
                     clients.erase(client_to_remove);
+                    worker_push(constants::Actions::CL_DISCONNECTED,personal_index,client_id_to_disconnect, listener_evfd);
                 }
                 int action = std::get<0>(listener_to_worker_q_tuple);
                 int new_cl_fd = std::get<1>(listener_to_worker_q_tuple);
@@ -212,14 +320,15 @@ private:
                         if (new_cl_fd<0 || new_cl_id<0) {
                             throw utils::ClientConnectionException("Invalid client socket or id\n");
                         }
-                        clients.push_back({new_cl_fd,new_cl_id});
-                        std::cout<<"Added new client\n";
+                        clients.emplace_back(new_cl_fd,new_cl_id);
+
                     break;
                     default:
                         break;
                 }
             }
         }
+        std::cout<<"Loop end\n";
     }
 
 
@@ -232,10 +341,16 @@ private:
             EpollManager epoll_manager{};
             std::string buffer;
             int sv_socket = isv.get_sv_socket();
+            int evfd = utils::get_evfd(EFD_NONBLOCK);
+
             epoll_manager.add_monitored_fd(EpollPair{STDIN_FILENO,EPOLLIN});
             epoll_manager.add_monitored_fd(EpollPair{sv_socket,EPOLLIN});
+            epoll_manager.add_monitored_fd(EpollPair{evfd,EPOLLIN});
             while (!isv.check_is_done()) {
-                int ret = epoll_manager.wait_events(0);
+                int ret = epoll_manager.wait_events(-1);
+                if (epoll_manager.check_event(evfd,EPOLLIN,ret)) {
+                    listener_process_worker_to_listener_q(isv,true," ",evfd);
+                }
                 if (epoll_manager.check_event(STDIN_FILENO,EPOLLIN, ret)) {
                     if (std::getline(std::cin, buffer)) {
                         if (buffer == "#quit") {
@@ -246,32 +361,34 @@ private:
                 if (epoll_manager.check_event(sv_socket,EPOLLIN, ret)) {
                     try {
                         auto socket_id_pair = isv.accept_client(true);
-                        process_new_client(isv, socket_id_pair.first, socket_id_pair.second);
+                        process_new_client(isv, socket_id_pair.first, socket_id_pair.second, evfd);
                     } catch (const utils::ServerFullException &e) {
-                        utils::cerr_out_red(e.what());
-                    } catch (const std::exception &e) {
-                        utils::cerr_out_red(e.what());
-                        utils::cerr_out_red("Error is critical, closing..");
+                        utils::clog_out_notif(e.what());
+                    } catch (const utils::ThreadManagingException& e) {
+                        utils::cerr_out_warning(e.what());
+                    }
+                    catch (const std::exception &e) {
+                        utils::cerr_out_err(e.what());
+                        utils::cerr_out_err("Error is critical, closing..");
                         isv.set_is_done();
                     }
                 }
-                std::this_thread::sleep_for(utils::time_millis(50));
             }
         } catch (const std::exception &e) {
-            std::cerr << e.what() << std::endl;
+            utils::cerr_out_err(e.what());
         }
     }
 
 public:
-    ServerManager() = default;
+    ServerThreadManager() = default;
 
-    ServerManager &operator=(const ServerManager &other) = delete;
+    ServerThreadManager &operator=(const ServerThreadManager &other) = delete;
 
-    ServerManager(const ServerManager &other) = delete;
+    ServerThreadManager(const ServerThreadManager &other) = delete;
 
-    ServerManager &operator=(ServerManager &&other) noexcept = delete;
+    ServerThreadManager &operator=(ServerThreadManager &&other) noexcept = delete;
 
-    ServerManager(ServerManager &&other) noexcept = delete;
+    ServerThreadManager(ServerThreadManager &&other) noexcept = delete;
 
     Queue_t received_msg_queue;
 

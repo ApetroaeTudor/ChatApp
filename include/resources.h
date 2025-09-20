@@ -46,10 +46,11 @@ namespace constants {
         INIT_DONE = 3,
         BROADCAST = 4,
         MSG_RECV = 5,
-        CLOSED = 6
+        THR_DISCONNECTED = 6,
+        CL_DISCONNECTED = 7
     };
 
-    constexpr std::array<const char*, 7> ACTIONS_ARR = {
+    constexpr std::array<const char*, 8> ACTIONS_ARR = {
         {
             "ACCEPT",
             "ACCEPTED",
@@ -57,7 +58,8 @@ namespace constants {
             "INIT_DONE",
             "BROADCAST",
             "MSG_RECV",
-            "CLOSED"
+            "THR_DISCONNECTED",
+            "CL_DISCONNECTED"
         }
     };
 }
@@ -136,9 +138,11 @@ namespace utils {
         explicit ClientConnectionException(const std::string& what_arg) : std::runtime_error(what_arg) {}
     };
 
-    ALWAYS_INLINE int cast_int(auto i) {
-        return static_cast<int>(i);
-    }
+    class ThreadManagingException: public std::runtime_error {
+        public:
+        explicit ThreadManagingException(const std::string& what_arg) : std::runtime_error(what_arg) {}
+    };
+
 
     ALWAYS_INLINE constexpr std::string_view get_color(colors::Colors color_type) {
         return colors::COLOR_ARR[static_cast<size_t>(color_type)];
@@ -156,8 +160,18 @@ namespace utils {
         return evfd;
     }
 
-    ALWAYS_INLINE void cerr_out_red(const char* msg) {
+    ALWAYS_INLINE void cerr_out_err(const char* msg) {
         std::cerr << utils::get_color(colors::Colors::BRIGHT_RED) << msg << utils::get_color(
+                            colors::Colors::COL_END) << std::endl;
+    }
+
+    ALWAYS_INLINE void cerr_out_warning(const char* msg) {
+        std::cerr << utils::get_color(colors::Colors::YELLOW) << msg << utils::get_color(
+                            colors::Colors::COL_END) << std::endl;
+    }
+
+    ALWAYS_INLINE void clog_out_notif(const char* msg) {
+        std::cerr << utils::get_color(colors::Colors::GREEN) << msg << utils::get_color(
                             colors::Colors::COL_END) << std::endl;
     }
 

@@ -18,13 +18,13 @@ int main(int argc, char *argv[])
     }
     else if (argc > 2)
     {
-        std::cerr << "Correct call: ./Server <OPTIONAL:sv_addr>, if not specified then 127.0.0.1 is used\n";
+        utils::cerr_out_err("Correct call: ./Server <OPTIONAL:sv_addr>, if not specified then 127.0.0.1 is used\n");
         return EXIT_FAILURE;
     }
 
     if (static_cast<int>(std::count(sv_addr.begin(), sv_addr.end(), '.') < 3))
     {
-        std::cerr << "Invalid IPv4 format\n";
+        utils::cerr_out_err("Invalid IPv4 format\n");
         return EXIT_FAILURE;
     }
 
@@ -39,7 +39,7 @@ int main(int argc, char *argv[])
     }
     catch (const std::exception &e)
     {
-        std::cerr << e.what() << '\n';
+        utils::cerr_out_err(e.what());
         return EXIT_FAILURE;
     }
 

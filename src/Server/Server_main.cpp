@@ -2,10 +2,10 @@
 #include <unistd.h>
 #include <iostream>
 #include "Server.h"
-#include "JThreadDispatcher.h"
+#include "ServerThreadManager.h"
 
 using AtomicQueueString = atomic_queue::AtomicQueue2<std::string, constants::QUEUE_SIZE>;
-using ServerThreadManager = ServerManager<AtomicQueueString>;
+using ServerManager = ServerThreadManager<AtomicQueueString>;
 
 int main(int argc, char *argv[]) {
     std::string_view sv_addr = constants::SV_ADDR;
@@ -21,7 +21,7 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    Server<AtomicQueueString, ServerThreadManager> MAIN_SERVER(
+    Server<AtomicQueueString, ServerManager> MAIN_SERVER(
         AF_INET,
         SOCK_STREAM,
         0,
