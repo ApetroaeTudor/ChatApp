@@ -9,6 +9,7 @@
 #include <chrono>
 #include <random>
 #include <sys/eventfd.h>
+#include <Server_Message.h>
 
 
 
@@ -25,10 +26,14 @@ namespace concepts {
 
 namespace constants {
 
+    constexpr int DISCONNECT_STATE = -1;
     constexpr int INITIAL_STATE = 0;
     constexpr int REQUESTED_INIT = 1;
     constexpr int SENT_INIT_CONFIRMATION = 2;
     constexpr int INIT_DONE = 3;
+
+    constexpr const char* SERVER_NAME = "SERVER";
+    constexpr int MARKED_DISCONNECT = -2;
 
 
 
@@ -55,8 +60,8 @@ namespace constants {
         ACCEPTED = 1,
         INIT_REQ = 2,
         INIT_DONE = 3,
-        BROADCAST = 4,
-        MSG_RECV = 5,
+        UNICAST_REPEATED = 4,
+        SV_DISCONNECTED = 5,
         THR_DISCONNECTED = 6,
         CL_DISCONNECTED = 7
     };
@@ -67,8 +72,8 @@ namespace constants {
             "ACCEPTED",
             "INIT_REQ",
             "INIT_DONE",
-            "BROADCAST",
-            "MSG_RECV",
+            "UNICAST_REPEATED",
+            "SV_DISCONNECTED",
             "THR_DISCONNECTED",
             "CL_DISCONNECTED"
         }
@@ -124,6 +129,8 @@ namespace characters {
     constexpr char BACKSPACE = 8;
 }
 
+#define C_E colors::COLOR_ARR[static_cast<size_t>(colors::Colors::COL_END)]
+
 
 namespace utils {
 
@@ -161,6 +168,10 @@ namespace utils {
         return colors::COLOR_ARR[static_cast<size_t>(color_type)];
     }
 
+    ALWAYS_INLINE constexpr std::string_view get_color(int color_type) {
+        return colors::COLOR_ARR[color_type];
+    }
+
     ALWAYS_INLINE constexpr const char* get_action(constants::Actions action_type) {
         return constants::ACTIONS_ARR[static_cast<size_t>(action_type)];
     }
@@ -188,14 +199,29 @@ namespace utils {
                             colors::Colors::COL_END) << std::endl;
     }
 
-    ALWAYS_INLINE std::string_view getRandomColor() {
+    ALWAYS_INLINE int getRandomColorID() {
         static std::mt19937 rng{std::random_device{}()};
         std::uniform_int_distribution<> dist(1, 14);
-        return colors::COLOR_ARR[dist(rng)];
+        return dist(rng);
+    }
+
+    ALWAYS_INLINE void stdout_formatted_msg(Server_Message& msg, int old_color_code) {
+        if (msg.action == utils::get_action(constants::Actions::UNICAST_REPEATED)) {
+            try {
+                auto col = get_color(std::stoi(msg.color_id));
+                auto old_col = get_color(old_color_code);
+                if (msg.name!=constants::SERVER_NAME) {
+                    std::cout <<C_E<<col<< msg.id<<'-'<<C_E<<old_col;
+                }
+                std::cout<<C_E<<col<<msg.name<<": "<<msg.msg_content<<C_E<<old_col<<std::endl;
+            }
+            catch (const std::exception& e) {
+                utils::cerr_out_err(e.what());
+            }
+        }
     }
 
 }
 
-#define C_E colors::COLOR_ARR[static_cast<size_t>(colors::Colors::COL_END)]
 
 

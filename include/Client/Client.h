@@ -25,7 +25,7 @@ private:
 
 
     std::string name;
-    std::string_view color=utils::get_color(colors::Colors::RED);
+    int color_id{static_cast<int>(colors::Colors::WHITE)};
     std::string id;
 
 
@@ -40,7 +40,7 @@ private:
 
     void receive_msg_from_sv(MessageFrame &msg_frame);
 
-    void update_color(const std::string& color);
+    void update_color(int color_id);
 
     ////////////////////////////////////////////////////
 
@@ -70,7 +70,6 @@ public:
 
     int get_cl_socket() const;
 
-
     bool check_init();
 
     void set_init();
@@ -78,10 +77,6 @@ public:
     void set_name(const char *name);
 
     std::string get_name() const;
-
-    void set_color(std::string_view color);
-
-    std::string_view get_color() const;
 
     void set_id(const char *id);
     std::string get_id() const;

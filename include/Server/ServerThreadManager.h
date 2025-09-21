@@ -131,18 +131,12 @@ private:
         emplace_new_worker(isv, socket, id, this->nr_of_launched_threads, listener_evfd);
     }
 
-    void worker_push(constants::Actions action, int thr_personal_idx, int cl_id, int listener_evfd) {
+    void worker_push(Server_Message &server_msg, int listener_evfd) {
         if (listener_evfd < 0) {
             throw std::runtime_error("Server listener event fd is invalid!\n");
         }
 
-        Server_Message msg{
-            std::to_string(thr_personal_idx),
-            utils::get_action(action),
-            " ",
-            std::to_string(cl_id)
-        };
-        if (!this->q_worker_to_listener.try_push(msg.get_concatenated_msg())) {
+        if (!this->q_worker_to_listener.try_push(server_msg.get_concatenated_msg())) {
             throw utils::QueueException("Failed to push disconnect client msg to Queue!\n");
         }
         const uint64_t u = 1;
@@ -175,9 +169,23 @@ private:
         std::cout << "New max clients per thr: " << this->max_clients_per_thread << std::endl;
     }
 
+    void unicast_repeated(IServer<Queue_t> &isv, int excepted_id, const std::vector<int> &populatedIDs,
+                          std::string msg_to_push) {
+        for (const auto &id: populatedIDs) {
+            if (excepted_id == id) {
+                continue;
+            }
+            if (!isv.get_client_ref(id).has_value()) {
+                continue;
+            }
+            if (!isv.get_client_ref(id)->get().send_queue.try_push(msg_to_push)) {
+                throw utils::QueueException("Failed to push message to corresponding client\n");
+            }
+        }
+    }
 
-    void listener_process_worker_to_listener_q(IServer<Queue_t> &isv, bool receive, const std::string &send_message,
-                                               int listener_evfd) {
+
+    void listener_process_worker_to_listener_q(IServer<Queue_t> &isv, int listener_evfd) {
         uint64_t u;
         ssize_t bytes_read = read(listener_evfd, &u, sizeof(uint64_t));
         if (bytes_read != sizeof(uint64_t)) {
@@ -188,27 +196,45 @@ private:
             throw std::runtime_error("Failed read on listener evfd\n");
         }
 
-        if (receive) {
-            std::string recv_message;
-            if (!this->q_worker_to_listener.try_pop(recv_message)) {
-                return;
+        std::string recv_message;
+        if (!this->q_worker_to_listener.try_pop(recv_message)) {
+            return;
+        }
+        Server_Message msg;
+        msg.construct_from_string(recv_message);
+        auto populatedIDs = isv.get_connected_IDs();
+        if (populatedIDs.empty()) {
+            return;
+        }
+
+
+        if (msg.action == utils::get_action(constants::Actions::CL_DISCONNECTED)) {
+            std::cout << "Client disconnected\n";
+            isv.disconnect_client(std::stoi(msg.id));
+            if (!this->worker_threads[std::stoi(msg.thread_number)].has_value()) {
+                throw utils::ThreadManagingException("Can't disconnect a client from an empty optional\n");
             }
-            Server_Message msg;
-            msg.construct_from_string(recv_message);
-            if (msg.action == utils::get_action(constants::Actions::CL_DISCONNECTED)) {
-                std::cout << "Client disconnected\n";
-                isv.disconnect_client(std::stoi(msg.id));
-                if (!this->worker_threads[std::stoi(msg.thread_number)].has_value()) {
-                    throw utils::ThreadManagingException("Can't disconnect a client from an empty optional\n");
-                }
-                if (std::get<0>(*this->worker_threads[std::stoi(msg.thread_number)]) == 0) {
-                    throw utils::ThreadManagingException(
-                        "Can't disconnect a client from a thread with 0 clients\n");
-                }
-                worker_client_disconnect(std::stoi(msg.thread_number));
+            if (std::get<0>(*this->worker_threads[std::stoi(msg.thread_number)]) == 0) {
+                throw utils::ThreadManagingException(
+                    "Can't disconnect a client from a thread with 0 clients\n");
             }
+            msg.action = utils::get_action(constants::Actions::UNICAST_REPEATED);
+            msg.msg_content = msg.name + " Has just left!";
+            msg.name = constants::SERVER_NAME;
+            unicast_repeated(isv,std::stoi(msg.id),populatedIDs,msg.get_concatenated_msg());
+            worker_client_disconnect(std::stoi(msg.thread_number));
+
+        } else if (msg.action == utils::get_action(constants::Actions::UNICAST_REPEATED)) {
+            int msg_id = std::stoi(msg.id);
+            unicast_repeated(isv, msg_id, populatedIDs, recv_message);
+        } else if (msg.action == utils::get_action(constants::Actions::SV_DISCONNECTED)) {
+            unicast_repeated(isv, -1, populatedIDs, recv_message);
+        } else if (msg.action == utils::get_action(constants::Actions::INIT_DONE)) {
+            msg.action = utils::get_action(constants::Actions::UNICAST_REPEATED);
+            unicast_repeated(isv,std::stoi(msg.id),populatedIDs, msg.get_concatenated_msg());
         }
     }
+
 
     // first int represents the action
     std::tuple<int, int, int> worker_process_listener_to_worker_q(EpollManager &em, int personal_index,
@@ -231,60 +257,95 @@ private:
             return {-1, -1, -1};
         }
         server_msg.construct_from_string(q_recv_msg);
-        if (server_msg.thread_number == std::to_string(personal_index)) {
-            if (server_msg.action == utils::get_action(constants::Actions::ACCEPT)) {
-                try {
-                    int tmp_fd = std::stoi(server_msg.fd);
-                    int tmp_id = std::stoi(server_msg.id);
-                    em.add_monitored_fd(EpollPair{tmp_fd,EPOLLIN | EPOLLOUT});
-                    return {static_cast<int>(constants::Actions::ACCEPT), tmp_fd, tmp_id};
-                } catch (...) {
-                    utils::cerr_out_warning("Bad string to int cast in worker loop - fd or id\n");
-                }
+
+        if (server_msg.action == utils::get_action(constants::Actions::ACCEPT)) {
+            if (server_msg.thread_number != std::to_string(personal_index)) {
+                return {-1, -1, -1};
             }
-        } else if (!this->q_listener_to_worker.try_push(q_recv_msg)) {
+            int tmp_fd = std::stoi(server_msg.fd);
+            int tmp_id = std::stoi(server_msg.id);
+            em.add_monitored_fd(EpollPair{tmp_fd,EPOLLIN | EPOLLOUT});
+            return {static_cast<int>(constants::Actions::ACCEPT), tmp_fd, tmp_id};
+        }
+
+        if (!this->q_listener_to_worker.try_push(q_recv_msg)) {
             throw utils::QueueException("Failed to put back rejected message\n");
         }
         return {-1, -1, -1};
     }
 
-    void process_client_state(bool input,Server_Message& server_msg, IServer<Queue_t>& isv, std::optional<std::reference_wrapper<Client_Data<Queue_t>>>& current_client_ref) {
+    void process_client_state(bool input, Server_Message &server_msg, IServer<Queue_t> &isv,
+                              std::optional<std::reference_wrapper<Client_Data<Queue_t> > > &current_client_ref,
+                              int listener_evfd) {
+        auto &cl = current_client_ref->get();
         if (input) {
-            switch (current_client_ref->get().get_state()) {
+            if (server_msg.action == utils::get_action(constants::Actions::CL_DISCONNECTED)) {
+                cl.set_state(constants::DISCONNECT_STATE);
+            }
+            switch (cl.get_state()) {
                 case constants::INITIAL_STATE:
                     if (server_msg.action == utils::get_action(constants::Actions::INIT_REQ)) {
-                        current_client_ref->get().name = server_msg.name;
-                        current_client_ref->get().color = server_msg.color;
-                        current_client_ref->get().inc_state();
+                        cl.inc_state();
+                        cl.name = server_msg.name;
                     }
                     server_msg.reset_msg();
                     return;
                 case constants::SENT_INIT_CONFIRMATION:
+                    if (server_msg.action == utils::get_action(constants::Actions::INIT_DONE)) {
+                        cl.inc_state();
 
+                        server_msg.name = current_client_ref->get().name;
+
+                        server_msg.action = utils::get_action(constants::Actions::UNICAST_REPEATED);
+                        server_msg.name = constants::SERVER_NAME;
+                        server_msg.id = std::to_string(cl.personal_id);
+                        server_msg.color_id = std::to_string(cl.color_id);
+                        server_msg.msg_content = std::string("Hello ") + cl.name + std::string(", now you can chat!");
+                        std::cout << "Client ID:" << cl.personal_id << " Name: " << cl.name << " has connected!" <<
+                                std::endl;
+                        isv.send_msg(std::move(server_msg.get_concatenated_msg()), cl.personal_id);
+
+
+                        server_msg.action = utils::get_action(constants::Actions::INIT_DONE);
+                        server_msg.name = constants::SERVER_NAME;
+                        server_msg.id = std::to_string(cl.personal_id);
+                        server_msg.msg_content = cl.name + " Has Just Connected!";
+                        worker_push(server_msg,listener_evfd);
+
+                        server_msg.reset_msg();
+                    }
                     return;
                 case constants::INIT_DONE:
+                    if (server_msg.action == utils::get_action(constants::Actions::UNICAST_REPEATED)) {
+                        std::cout<<"RECEIVED MSG ON SV!"<<std::endl;
+                        worker_push(server_msg, listener_evfd);
+                        server_msg.reset_msg();
+                    }
                     return;
                 default:
                     return;
             }
         }
 
-        switch (current_client_ref->get().get_state()) {
+        switch (cl.get_state()) {
             case constants::REQUESTED_INIT:
+                cl.inc_state();
                 server_msg.action = utils::get_action(constants::Actions::INIT_REQ);
-                server_msg.name = current_client_ref->get().name;
-                server_msg.color = current_client_ref->get().color;
-                server_msg.id = std::to_string(current_client_ref->get().personal_id);
-                isv.send_msg(std::move(server_msg.get_concatenated_msg()),current_client_ref->get().personal_id);
-                break;
+                server_msg.name = cl.name;
+                server_msg.color_id = std::to_string(cl.color_id);
+                server_msg.id = std::to_string(cl.personal_id);
+                isv.send_msg(std::move(server_msg.get_concatenated_msg()), cl.personal_id);
+                return;
             case constants::INIT_DONE:
-                break;
-            default:
-                break;
+                std::string send_msg;
+                while (cl.send_queue.try_pop(send_msg)) {
+                    // if (send_msg.empty()) {
+                    //     return;
+                    // }
+                    isv.send_msg(std::move(send_msg), cl.personal_id);
+                }
         }
-
     }
-
 
 
     void worker_loop(IServer<Queue_t> &isv, int cl_fd, int cl_id, int personal_index, int personal_evfd,
@@ -300,13 +361,11 @@ private:
 
 
         int ret = -1;
-        while (!clients.empty()) {
+        while (!clients.empty() && !isv.check_is_done()) {
             ret = em.wait_events(-1);
             if (ret <= 0) {
                 continue;
             }
-            auto client_to_remove = clients.end();
-            int client_id_to_disconnect = -1;
             std::tuple listener_to_worker_q_tuple = {-1, -1, -1};
 
             if (em.check_event(personal_evfd,EPOLLIN, ret)) {
@@ -315,27 +374,20 @@ private:
             }
 
             for (const auto &client: clients) {
+                auto current_client_ref = isv.get_client_ref(client.second);
+
                 if (em.check_event(client.first,EPOLLIN, ret)) {
                     if (isv.receive_msg(msg_frame, client.second) == 0) {
                         // client exit
-                        client_id_to_disconnect = client.second;
-                        // isv.disconnect_client(client.second);
-                        client_to_remove = std::find_if(clients.begin(), clients.end(),
-                                                        [&client](std::pair<int, int> a) {
-                                                            return a.second == client.second;
-                                                        });
+                        isv.get_client_ref(client.second)->get().set_state(constants::DISCONNECT_STATE);
                         continue;
                     }
-                    std::cout << "THR " << personal_index << ": msg: " << msg_frame.msg << std::endl;
-                    auto current_client_ref = isv.get_client_ref(client.second);
                     if (!current_client_ref.has_value()) {
                         continue;
                     }
                     server_msg.construct_from_string(std::string(msg_frame.msg));
                     msg_frame.clear_msg();
-                    process_client_state(true,server_msg,isv,current_client_ref);
-
-
+                    process_client_state(true, server_msg, isv, current_client_ref, listener_evfd);
 
 
                     // if stage == 0 take init message -> stage = 1
@@ -344,20 +396,35 @@ private:
 
                     // client has a valid msg in the buffer
                     // put msg in worker_to_listener
-                    if (em.check_event(client.first,EPOLLOUT, ret)) {
-                        process_client_state(false,server_msg,isv,current_client_ref);
-                        // can send a message to client
-                        // if stage == 1, send init msg -> stage = 2
-                        // if stage == 3 : check listener_to_worker, send message to client if BROADCAST
-                    }
+                }
+                if (em.check_event(client.first,EPOLLOUT, ret)) {
+                    process_client_state(false, server_msg, isv, current_client_ref, listener_evfd);
+                    // can send a message to client
+                    // if stage == 1, send init msg -> stage = 2
+                    // if stage == 3 : check listener_to_worker, send message to client if BROADCAST
                 }
             }
-            if (client_to_remove != clients.end() && client_id_to_disconnect >= 0) {
-                // must send cl_disconnected msg to q worker to listener with the client ID to disconnect, and thread ID
-                clients.erase(client_to_remove);
-                worker_push(constants::Actions::CL_DISCONNECTED, personal_index, client_id_to_disconnect,
-                            listener_evfd);
-            }
+            // must send cl_disconnected msg to q worker to listener with the client ID to disconnect, and thread ID
+            clients.erase(
+                std::remove_if(
+                    clients.begin(),
+                    clients.end(),
+                    [&](const auto &client) {
+                        bool disconnected = isv.get_client_ref(client.second)->get().get_state() ==
+                                            constants::DISCONNECT_STATE;
+                        if (disconnected) {
+                            server_msg.action = utils::get_action(constants::Actions::CL_DISCONNECTED);
+                            server_msg.name = isv.get_client_ref(client.second)->get().name;
+                            server_msg.thread_number = std::to_string(personal_index);
+                            server_msg.id = std::to_string(client.second);
+                            server_msg.color_id = std::to_string(isv.get_client_ref(client.second)->get().color_id);
+                            worker_push(server_msg, listener_evfd);
+                            std::cout << "Client ID:" << client.second << " Signaled for disconnect!" << std::endl;
+                        }
+                        return disconnected;
+                    }),
+                clients.end());
+
             int action = std::get<0>(listener_to_worker_q_tuple);
             int new_cl_fd = std::get<1>(listener_to_worker_q_tuple);
             int new_cl_id = std::get<2>(listener_to_worker_q_tuple);
@@ -393,16 +460,20 @@ private:
             epoll_manager.add_monitored_fd(EpollPair{evfd,EPOLLIN});
             while (!isv.check_is_done()) {
                 int ret = epoll_manager.wait_events(-1);
-                if (ret<=0) {
+                if (ret <= 0) {
                     continue;
                 }
                 if (epoll_manager.check_event(evfd,EPOLLIN, ret)) {
-                    listener_process_worker_to_listener_q(isv, true, " ", evfd);
+                    listener_process_worker_to_listener_q(isv, evfd);
                 }
                 if (epoll_manager.check_event(STDIN_FILENO,EPOLLIN, ret)) {
                     if (std::getline(std::cin, buffer)) {
                         if (buffer == constants::QUIT_MSG) {
                             isv.set_is_done();
+                            Server_Message msg;
+                            msg.action = utils::get_action(constants::Actions::SV_DISCONNECTED);
+                            msg.msg_content = "SERVER DISCONNECTED";
+                            this->q_worker_to_listener.try_push(msg.get_concatenated_msg());
                         }
                     }
                 }
@@ -421,6 +492,8 @@ private:
                     }
                 }
             }
+        } catch (const utils::QueueException &e) {
+            utils::cerr_out_warning(e.what());
         } catch (const std::exception &e) {
             utils::cerr_out_err(e.what());
         }

@@ -13,13 +13,13 @@ struct Server_Message {
     std::string fd{};
     std::string id{};
     std::string name{};
-    std::string color{};
+    std::string color_id{};
     std::string init_done{};
     std::string msg_content{};
 
     std::string get_concatenated_msg() {
         return thread_number + split_token + action + split_token + fd + split_token + id + split_token + name +
-               split_token + color + split_token + init_done + split_token + msg_content + split_token;
+               split_token + color_id + split_token + init_done + split_token + msg_content + split_token;
     }
 
     void reset_msg() {
@@ -28,7 +28,7 @@ struct Server_Message {
         fd.clear();
         id.clear();
         name.clear();
-        color.clear();
+        color_id.clear();
         init_done.clear();
         msg_content.clear();
     }
@@ -39,7 +39,7 @@ struct Server_Message {
         this->fd = fd;
         this->id = id;
         this->name = name;
-        this->color = color;
+        this->color_id = color;
         this->init_done = init_done;
         this->msg_content = msg_content;
     }
@@ -58,7 +58,7 @@ struct Server_Message {
         std::getline(iss,fd,split_token);
         std::getline(iss,id,split_token);
         std::getline(iss,name,split_token);
-        std::getline(iss,color,split_token);
+        std::getline(iss,color_id,split_token);
         std::getline(iss,init_done,split_token);
         std::getline(iss,msg_content,split_token);
     }

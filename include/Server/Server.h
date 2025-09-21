@@ -27,6 +27,8 @@ public:
 
     virtual std::optional<std::reference_wrapper<Client_Data<Queue_t> > > get_client_ref(int cl_id) = 0;
 
+    virtual std::vector<int> get_connected_IDs() = 0;
+
     virtual std::pair<int,int> accept_client(bool non_blocking) = 0;
 
     virtual void disconnect_client(int cl_id) = 0;
@@ -171,6 +173,7 @@ public:
         }
     }
 
+
     std::jthread launch_server_loop() {
         return this->sv_manager.launch_listener_loop(*this);
     }
@@ -181,6 +184,16 @@ public:
         return this->sv_socket;
     }
 
+
+    std::vector<int> get_connected_IDs() override {
+        std::vector<int> IDs;
+        for (const auto& cl: this->clients) {
+            if (cl.has_value()) {
+                IDs.push_back(cl->personal_id);
+            }
+        }
+        return IDs;
+    }
 
     std::optional<std::reference_wrapper<Client_Data<Queue_t> > > get_client_ref(int cl_id)  override {
         auto it = std::find_if(this->clients.begin(), this->clients.end(),

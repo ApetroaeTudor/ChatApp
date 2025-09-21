@@ -7,8 +7,9 @@
 
 Client::Client(int domain, int type, int protocol, std::string_view sv_addr, int port) {
     std::cout << colors::COLOR_ARR[static_cast<size_t>(colors::Colors::BRIGHT_MAGENTA)] << "Please input your name: " <<
-            colors::COLOR_ARR[static_cast<size_t>(colors::Colors::COL_END)] << std::endl;
-    std::cout << this->color << std::endl;
+            colors::COLOR_ARR[static_cast<size_t>(colors::Colors::COL_END)];
+
+    std::cout << utils::get_color(this->color_id) << std::endl;
     std::string buffer;
     std::cin >> buffer;
 
@@ -85,24 +86,38 @@ void Client::send_msg_from_stdin(std::string &buffer, Server_Message &msg) {
         if (std::getline(std::cin, buffer)) {
             if (buffer == constants::QUIT_MSG) {
                 client_done_source.request_stop();
-                this->send_msg(std::string("Client Disconnecting..\n"));
-            } else {
-                this->send_msg(std::move(buffer));
+                msg.action=utils::get_action(constants::Actions::CL_DISCONNECTED);
+                msg.name = this->name;
+                msg.id = this->id;
+                this->send_msg(msg.get_concatenated_msg());
+            } else if (!buffer.empty()) {
+                msg.action = utils::get_action(constants::Actions::UNICAST_REPEATED);
+                msg.name = this->name;
+                msg.id = this->id;
+                msg.color_id = std::to_string(this->color_id);
+                msg.msg_content = buffer;
+
+                this->send_msg(msg.get_concatenated_msg());
             }
         }
+        msg.reset_msg();
+
     } catch (const std::exception &e) {
         utils::cerr_out_err(e.what());
     }
 }
 
-void Client::update_color(const std::string& color) {
-    std::cout<<C_E;
-    std::cout<<color<<std::endl;
+void Client::update_color(int color_id) {
+    std::lock_guard lk(this->data_mutex);
+
+    std::cout<<C_E<<std::endl;
+    this->color_id = color_id;
+    std::cout<<utils::get_color(this->color_id)<<std::endl;
 }
 
 void Client::finalize_init(Server_Message& server_msg) {
     if (server_msg.action == utils::get_action(constants::Actions::INIT_REQ)) {
-        this->update_color(server_msg.color);
+        this->update_color(std::stoi(server_msg.color_id));
         this->id = server_msg.id;
         this->init_done.test_and_set(std::memory_order_release);
         server_msg.reset_msg();
@@ -133,8 +148,11 @@ void Client::receive_msg_from_sv(MessageFrame &msg_frame) {
             msg_frame.clear_msg();
             return;
         }
-        std::cout << this->get_color() << "Message Received: " << msg_frame.msg << colors::COLOR_ARR[static_cast<
-            size_t>(colors::Colors::COL_END)] << std::endl;
+
+
+        utils::stdout_formatted_msg(server_msg,this->color_id);
+
+
         msg_frame.clear_msg();
         server_msg.reset_msg();
     } catch (const std::exception &e) {
@@ -161,20 +179,6 @@ std::string Client::get_name() const {
     }
     return this->name;
 }
-
-
-void Client::set_color(std::string_view color) {
-    std::lock_guard lk(this->data_mutex);
-
-    this->color = color;
-}
-
-std::string_view Client::get_color() const {
-    if (this->color.empty()) {
-        return colors::COLOR_ARR[static_cast<size_t>(colors::Colors::BRIGHT_WHITE)];
-    } else return this->color;
-}
-
 
 void Client::set_id(const char *id) {
     std::lock_guard lk(this->data_mutex);
@@ -210,12 +214,14 @@ void Client::start_send_loop() {
             if (!this->name.empty()) {
                 msg.action = utils::get_action(constants::Actions::INIT_REQ);
                 msg.name = this->name;
+                msg.color_id = std::to_string(this->color_id);
                 this->send_msg(std::move(msg.get_concatenated_msg()));
                 this->init_req.test_and_set(std::memory_order_release);
             }
             continue;
         }
         events_nr = em.wait_events(-1);
+
         if (em.check_event(STDIN_FILENO, EPOLLIN, events_nr)) {
             send_msg_from_stdin(buffer, msg);
             msg.reset_msg();
