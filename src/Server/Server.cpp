@@ -3,7 +3,7 @@
 
 
 
-Server::Server(int domain, int type, int protocol, int port, std::string &sv_addr, int sock_opts, int optval)
+Server::Server(int domain, int type, int protocol, int port, std::string &LOCALHOST, int sock_opts, int optval)
 {
     
 }

@@ -97,9 +97,9 @@ public:
 
     Server &operator=(Server &&other) noexcept = delete;
 
-    Server(int domain, int type, int protocol, int port, std::string_view sv_addr, int sock_opts, int optval) {
+    Server(int domain, int type, int protocol, int port, std::string_view LOCALHOST, int sock_opts, int optval) {
         
-        if (inet_pton(domain, sv_addr.data(), &this->s_addr.sin_addr) <= 0) {
+        if (inet_pton(domain, LOCALHOST.data(), &this->s_addr.sin_addr) <= 0) {
             throw std::runtime_error("Failed to load network addr in struct\n");
         }
         this->s_addr.sin_family = domain;

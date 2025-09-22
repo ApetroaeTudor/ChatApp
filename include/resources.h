@@ -43,7 +43,7 @@ namespace constants {
     constexpr unsigned MAX_CLIENTS_PER_THREAD = 3;
 
     constexpr unsigned PORT = 8080;
-    constexpr std::string_view SV_ADDR = "127.0.0.1";
+    constexpr std::string_view LOCALHOST = "127.0.0.1";
     constexpr unsigned MAX_EVENTS = 20;
     constexpr unsigned QUEUE_SIZE = 128;
     constexpr unsigned FINAL_INIT_STAGE = 3;

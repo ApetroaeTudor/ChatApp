@@ -10,19 +10,18 @@
 
 int main(int argc, char *argv[])
 {
-
-    std::string_view sv_addr = constants::SV_ADDR;
+    std::string_view LOCALHOST = constants::LOCALHOST;
     if (argc == 2)
     {
-        sv_addr = std::string_view(argv[1]);
+        LOCALHOST = std::string_view(argv[1]);
     }
     else if (argc > 2)
     {
-        utils::cerr_out_err("Correct call: ./Server <OPTIONAL:sv_addr>, if not specified then 127.0.0.1 is used\n");
+        utils::cerr_out_err("Correct call: ./Server <OPTIONAL:LOCALHOST>, if not specified then 127.0.0.1 is used\n");
         return EXIT_FAILURE;
     }
 
-    if (static_cast<int>(std::count(sv_addr.begin(), sv_addr.end(), '.') < 3))
+    if (static_cast<int>(std::count(LOCALHOST.begin(), LOCALHOST.end(), '.') < 3))
     {
         utils::cerr_out_err("Invalid IPv4 format\n");
         return EXIT_FAILURE;
@@ -30,7 +29,7 @@ int main(int argc, char *argv[])
 
     try
     {
-        Client cl(AF_INET, SOCK_STREAM, 0, sv_addr.data(), constants::PORT);
+        Client cl(AF_INET, SOCK_STREAM, 0, LOCALHOST.data(), constants::PORT);
         cl.make_cl_socket_nonblocking();
         std::jthread send_jthr([&]()
                                { cl.start_send_loop(); });
