@@ -26,6 +26,7 @@ int main(int argc, char *argv[]) {
         SOCK_STREAM,
         0,
         constants::PORT,
+        sv_addr,
         SO_REUSEADDR | SO_REUSEPORT,
         1
     );
