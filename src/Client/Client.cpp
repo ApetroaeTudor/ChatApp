@@ -5,7 +5,7 @@
 #include "Server_Message.h"
 
 
-Client::Client(int domain, int type, int protocol, std::string_view LOCALHOST, int port) {
+Client::Client(int domain, int type, int protocol, const std::string &sv_addr, int port) {
     std::cout << colors::COLOR_ARR[static_cast<size_t>(colors::Colors::BRIGHT_MAGENTA)] << "Please input your name: " <<
             colors::COLOR_ARR[static_cast<size_t>(colors::Colors::COL_END)];
 
@@ -21,7 +21,7 @@ Client::Client(int domain, int type, int protocol, std::string_view LOCALHOST, i
     if (cl_socket < 0) {
         throw std::runtime_error("Failed to open socket - Client\n");
     }
-    if (inet_pton(domain, LOCALHOST.data(), &this->s_addr.sin_addr) <= 0) {
+    if (inet_pton(domain, sv_addr.c_str(), &this->s_addr.sin_addr) <= 0) {
         throw std::runtime_error("Failed to load network addr in struct\n");
     }
     this->s_addr.sin_family = domain;

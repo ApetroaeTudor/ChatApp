@@ -45,7 +45,6 @@ int main(int argc, char *argv[])
             return EXIT_FAILURE;
         }
 
-        sv_addr = get_local_ipv4();
 
     }
     else
@@ -64,6 +63,7 @@ int main(int argc, char *argv[])
 
     if (!local_only)
     {
+        sv_addr = get_local_ipv4();
         lan_dns_pid = fork();
         if (lan_dns_pid < 0)
         {
@@ -131,7 +131,6 @@ bool check_argv_1(const char *str, bool &local_only)
 {
     bool local = !strcmp(str, "LOCALHOST\0");
     bool lan = !strcmp(str, "LAN\0");
-    std::cout<<"local"<<local<<"lan"<<lan<<std::endl;
     bool returnval = local || lan;
     local_only = local;
     return returnval;
