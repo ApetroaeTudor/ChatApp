@@ -1,6 +1,6 @@
 # Linux Chat App
 
-![App Demo](https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExMjNmcXBmZnpoYmoxNnYxNzhobHByN2wxdjZ1aTZ5d3dkNnNneHIzciZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/771y4xuhp1QGxNMKnB/giphy.gif)
+[![App Demo](https://img.youtube.com/vi/DCTJWlXqAiM/0.jpg)](https://www.youtube.com/watch?v=DCTJWlXqAiM)
 
 ## General Presentation
 A C++ implementation of a Chat Application that runs in either LOCALHOST mode (server and clients on the same machine), or in LAN mode.  
