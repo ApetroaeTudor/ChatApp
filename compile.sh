@@ -1,1 +1,0 @@
-g++ -Wall -std=c++23 -o $1 $1.cpp

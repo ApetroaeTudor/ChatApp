@@ -23,7 +23,6 @@ private:
     int cl_event_fd;
 
 
-
     std::string name;
     int color_id{static_cast<int>(colors::Colors::WHITE)};
     std::string id;
@@ -46,11 +45,11 @@ private:
 
     void send_msg(std::string &&msg) const;
 
-    void finalize_init(Server_Message& server_msg);
+    void finalize_init(Server_Message &server_msg);
 
     int receive_msg(struct MessageFrame &message_frame) const;
 
-    bool is_initialized()const;
+    bool is_initialized() const;
 
 public:
     Client(const Client &cl) = delete;
@@ -62,7 +61,7 @@ public:
     Client &operator=(Client &&other) noexcept = delete;
 
 
-    Client(int domain, int type, int protocol, const std::string& sv_addr, int port);
+    Client(int domain, int type, int protocol, const std::string &sv_addr, int port);
 
     ~Client();
 
@@ -79,6 +78,7 @@ public:
     std::string get_name() const;
 
     void set_id(const char *id);
+
     std::string get_id() const;
 
     /////////////////////////////////////////////////////// -main loop functions

@@ -5,7 +5,7 @@
 #include <string>
 #include <string_view>
 
-template<concepts::NonBlockingAtomicStringQueue Queue_t>
+template<concepts::Q_ThrS_Str Queue_t>
 struct Client_Data {
     inline static std::atomic<int> id{0};
     int personal_id;

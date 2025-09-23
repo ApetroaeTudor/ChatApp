@@ -54,17 +54,13 @@ inline std::pair<int, int> get_max_and_idx(
 }
 
 
-template<concepts::NonBlockingAtomicStringQueue Queue_t>
+template<concepts::Q_ThrS_Str Queue_t>
 class ServerThreadManager {
 private:
     int max_clients_per_thread{1};
-
     int nr_of_launched_threads{0};
-
-
     Queue_t q_worker_to_listener;
     Queue_t q_listener_to_worker;
-
     worker_arr_t worker_threads;
 
 
@@ -221,9 +217,8 @@ private:
             msg.action = utils::get_action(constants::Actions::UNICAST_REPEATED);
             msg.msg_content = msg.name + " Has just left!";
             msg.name = constants::SERVER_NAME;
-            unicast_repeated(isv,std::stoi(msg.id),populatedIDs,msg.get_concatenated_msg());
+            unicast_repeated(isv, std::stoi(msg.id), populatedIDs, msg.get_concatenated_msg());
             worker_client_disconnect(std::stoi(msg.thread_number));
-
         } else if (msg.action == utils::get_action(constants::Actions::UNICAST_REPEATED)) {
             int msg_id = std::stoi(msg.id);
             unicast_repeated(isv, msg_id, populatedIDs, recv_message);
@@ -231,7 +226,7 @@ private:
             unicast_repeated(isv, -1, populatedIDs, recv_message);
         } else if (msg.action == utils::get_action(constants::Actions::INIT_DONE)) {
             msg.action = utils::get_action(constants::Actions::UNICAST_REPEATED);
-            unicast_repeated(isv,std::stoi(msg.id),populatedIDs, msg.get_concatenated_msg());
+            unicast_repeated(isv, std::stoi(msg.id), populatedIDs, msg.get_concatenated_msg());
         }
     }
 
@@ -310,14 +305,14 @@ private:
                         server_msg.name = constants::SERVER_NAME;
                         server_msg.id = std::to_string(cl.personal_id);
                         server_msg.msg_content = cl.name + " Has Just Connected!";
-                        worker_push(server_msg,listener_evfd);
+                        worker_push(server_msg, listener_evfd);
 
                         server_msg.reset_msg();
                     }
                     return;
                 case constants::INIT_DONE:
                     if (server_msg.action == utils::get_action(constants::Actions::UNICAST_REPEATED)) {
-                        std::cout<<"RECEIVED MSG ON SV!"<<std::endl;
+                        std::cout << "RECEIVED MSG ON SV!" << std::endl;
                         worker_push(server_msg, listener_evfd);
                         server_msg.reset_msg();
                     }

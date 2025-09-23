@@ -16,7 +16,7 @@
 
 namespace concepts {
     template<typename Q>
-    concept NonBlockingAtomicStringQueue = requires(Q q, std::string in, std::string out)
+    concept Q_ThrS_Str = requires(Q q, std::string in, std::string out)
     {
         { q.try_push(std::move(in)) } -> std::same_as<bool>;
         { q.try_pop(out) } -> std::same_as<bool>;
@@ -26,14 +26,8 @@ namespace concepts {
 
 namespace constants {
 
-    constexpr int DISCONNECT_STATE = -1;
-    constexpr int INITIAL_STATE = 0;
-    constexpr int REQUESTED_INIT = 1;
-    constexpr int SENT_INIT_CONFIRMATION = 2;
-    constexpr int INIT_DONE = 3;
 
     constexpr const char* SERVER_NAME = "SERVER";
-    constexpr int MARKED_DISCONNECT = -2;
 
 
 
@@ -46,9 +40,7 @@ namespace constants {
     constexpr std::string_view LOCALHOST = "127.0.0.1";
     constexpr unsigned MAX_EVENTS = 20;
     constexpr unsigned QUEUE_SIZE = 128;
-    constexpr unsigned FINAL_INIT_STAGE = 3;
     constexpr unsigned MAX_CLIENTS = MAX_NR_OF_THREADS*MAX_CLIENTS_PER_THREAD;
-
 
     constexpr const char *NAME_UNINITIALIZED = "name_uninitialized";
     constexpr const char *ID_UNINITIALIZED = "id_uninitialized";
@@ -78,6 +70,17 @@ namespace constants {
             "CL_DISCONNECTED"
         }
     };
+
+
+
+    constexpr int MARKED_DISCONNECT = -2;
+    constexpr int DISCONNECT_STATE = -1;
+    constexpr int INITIAL_STATE = 0;
+    constexpr int REQUESTED_INIT = 1;
+    constexpr int SENT_INIT_CONFIRMATION = 2;
+    constexpr int INIT_DONE = 3;
+    constexpr unsigned FINAL_INIT_STAGE = 3;
+
 }
 
 namespace colors {
